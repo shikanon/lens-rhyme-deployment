@@ -27,7 +27,28 @@ services:
       OSS_ENDPOINT: ${OSS_ENDPOINT:-}
       OSS_BUCKET_NAME: ${OSS_BUCKET_NAME:-}
       OSS_CDN_DOMAIN: ${OSS_CDN_DOMAIN:-}
+      OSS_CONNECT_TIMEOUT: ${OSS_CONNECT_TIMEOUT:-30}
+      OSS_READ_TIMEOUT: ${OSS_READ_TIMEOUT:-120}
+      OSS_MOCK_UPLOAD: ${OSS_MOCK_UPLOAD:-false}
       ARK_API_KEY: ${ARK_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
+      IMAGE_API_KEY: ${IMAGE_API_KEY:-}
+      IMAGE_API_BASE_URL: ${IMAGE_API_BASE_URL:-}
+      VIDEO_API_KEY: ${VIDEO_API_KEY:-}
+      VIDEO_API_BASE_URL: ${VIDEO_API_BASE_URL:-}
+      MODEL3D_API_KEY: ${MODEL3D_API_KEY:-}
+      MODEL3D_API_BASE_URL: ${MODEL3D_API_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VOLC_TTS_APPID: ${VOLC_TTS_APPID:-}
+      VOLC_TTS_TOKEN: ${VOLC_TTS_TOKEN:-}
+      VOLC_TTS_VOICE_ID: ${VOLC_TTS_VOICE_ID:-}
+      VOLC_ASR_API_KEY: ${VOLC_ASR_API_KEY:-}
+      SEEDANCE_ASSET_AK: ${SEEDANCE_ASSET_AK:-}
+      SEEDANCE_ASSET_SK: ${SEEDANCE_ASSET_SK:-}
+      SEEDANCE_ASSET_REVIEW_ENABLED: ${SEEDANCE_ASSET_REVIEW_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,6 +152,7 @@ services:
       - source: nginx_config
         target: /etc/nginx/conf.d/default.conf
     ports:
+      - "80:80"
       - "5410:80"
       - "5041:8080"
     depends_on:

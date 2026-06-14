@@ -18,8 +18,8 @@ Run commands from this repository root.
 Aliyun registry deployment:
 
 ```bash
-docker compose -f compose/docker-compose.yml pull
-docker compose -f compose/docker-compose.yml up -d
+docker compose --env-file .env -f compose/docker-compose.yml pull
+docker compose --env-file .env -f compose/docker-compose.yml up -d
 ```
 
 The stack stores `/app/data` and `/app/outputs` in Docker named volumes, uses
@@ -29,7 +29,7 @@ the Compose file.
 Configuration-only update:
 
 ```bash
-docker compose -f compose/docker-compose.yml up -d
+docker compose --env-file .env -f compose/docker-compose.yml up -d
 ```
 
 When adding another Compose stack, keep it in this directory and document the target environment here.

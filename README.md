@@ -28,8 +28,8 @@ resolve as expected.
 Registry image deployment:
 
 ```bash
-docker compose -f compose/docker-compose.yml pull
-docker compose -f compose/docker-compose.yml up -d
+docker compose --env-file .env -f compose/docker-compose.yml pull
+docker compose --env-file .env -f compose/docker-compose.yml up -d
 ```
 
 The Compose file is self-contained: it stores backend runtime data in Docker
