@@ -194,7 +194,11 @@ configs:
               return 404;
           }
 
-          location /docs/ {
+          location = /docs {
+              return 301 /docs/;
+          }
+
+          location ^~ /docs/ {
               set $$upstream http://docs-site:80;
               proxy_pass $$upstream;
               proxy_http_version 1.1;
