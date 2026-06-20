@@ -50,9 +50,14 @@ services:
       CHAT_CODEX_AUTH_MODE: ${CHAT_CODEX_AUTH_MODE:-api_key}
       CHAT_CODEX_APPROVAL_POLICY: ${CHAT_CODEX_APPROVAL_POLICY:-never}
       CHAT_CODEX_USE_SELECTED_MODEL: ${CHAT_CODEX_USE_SELECTED_MODEL:-false}
-      CHAT_CODEX_MODEL: ${CHAT_CODEX_MODEL:-gpt-5.4-mini}
+      CHAT_CODEX_MODEL: ${CHAT_CODEX_MODEL:-}
       CHAT_CODEX_ALLOW_WEB_ACCESS: ${CHAT_CODEX_ALLOW_WEB_ACCESS:-false}
       CHAT_CODEX_WORKDIR_ROOT: ${CHAT_CODEX_WORKDIR_ROOT:-/app/data/codex-workdirs}
+      CHAT_CODEX_RUNNER_MANAGER_URL: ${CHAT_CODEX_RUNNER_MANAGER_URL:-http://codex-runner-manager:8080}
+      CHAT_CODEX_RUNNER_MODE: ${CHAT_CODEX_RUNNER_MODE:-remote_preferred}
+      CHAT_CODEX_LOCAL_FALLBACK_ENABLED: ${CHAT_CODEX_LOCAL_FALLBACK_ENABLED:-true}
+      CHAT_CODEX_REMOTE_TIMEOUT_SECONDS: ${CHAT_CODEX_REMOTE_TIMEOUT_SECONDS:-600}
+      CODEX_RUNNER_MANAGER_TOKEN: ${CODEX_RUNNER_MANAGER_TOKEN:-lens-rhyme-runner-local-token}
       VOLC_TTS_APPID: ${VOLC_TTS_APPID:-}
       VOLC_TTS_TOKEN: ${VOLC_TTS_TOKEN:-}
       VOLC_TTS_VOICE_ID: ${VOLC_TTS_VOICE_ID:-}
@@ -65,6 +70,8 @@ services:
         condition: service_healthy
       openviking:
         condition: service_started
+      codex-runner-manager:
+        condition: service_healthy
     command:
       - /bin/sh
       - -c
@@ -78,6 +85,49 @@ services:
           }
         fi
         exec python -m scripts.server start --host 0.0.0.0 --port 8000
+    restart: always
+
+  codex-runner-manager:
+    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+    volumes:
+      - codex_home:/codex-home
+      - codex_runner_data:/app/data
+      - backend_outputs:/app/outputs
+    environment:
+      CODEX_HOME: ${CODEX_HOME:-/codex-home}
+      CODEX_AUTO_LOGIN: ${CODEX_AUTO_LOGIN:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CHAT_CODEX_BINARY: ${CHAT_CODEX_BINARY:-codex}
+      CHAT_CODEX_APPROVAL_POLICY: ${CHAT_CODEX_APPROVAL_POLICY:-never}
+      CHAT_CODEX_USE_SELECTED_MODEL: ${CHAT_CODEX_USE_SELECTED_MODEL:-false}
+      CHAT_CODEX_MODEL: ${CHAT_CODEX_MODEL:-}
+      CHAT_CODEX_ALLOW_WEB_ACCESS: ${CHAT_CODEX_ALLOW_WEB_ACCESS:-false}
+      CHAT_PLATFORM_CONFIG_ENV_ONLY: "true"
+      CODEX_RUNNER_MANAGER_TOKEN: ${CODEX_RUNNER_MANAGER_TOKEN:-lens-rhyme-runner-local-token}
+      CODEX_RUNNER_WORKDIR_ROOT: ${CODEX_RUNNER_WORKDIR_ROOT:-/app/data/workdirs}
+      CODEX_RUNNER_TURN_TIMEOUT_SECONDS: ${CODEX_RUNNER_TURN_TIMEOUT_SECONDS:-600}
+      CODEX_RUNNER_OUTPUT_CHUNK_BYTES: ${CODEX_RUNNER_OUTPUT_CHUNK_BYTES:-16384}
+      CODEX_RUNNER_OUTPUT_TURN_BYTES: ${CODEX_RUNNER_OUTPUT_TURN_BYTES:-16777216}
+      RUNNER_SUBSTRATE: ${RUNNER_SUBSTRATE:-process}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mkdir -p "$${CODEX_HOME:-/codex-home}" "$${CODEX_RUNNER_WORKDIR_ROOT:-/app/data/workdirs}"
+        if [ "$${CODEX_AUTO_LOGIN:-true}" = "true" ] && [ -n "$${OPENAI_API_KEY:-}" ] && [ ! -s "$${CODEX_HOME:-/codex-home}/auth.json" ]; then
+          printenv OPENAI_API_KEY | codex login --with-api-key >/tmp/codex-login.log 2>&1 || {
+            cat /tmp/codex-login.log >&2
+            exit 1
+          }
+        fi
+        exec python -m scripts.runner_manager --host 0.0.0.0 --port 8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     restart: always
 
   openviking:
@@ -190,6 +240,7 @@ volumes:
   backend_data:
   backend_outputs:
   codex_home:
+  codex_runner_data:
   postgres_data:
   openviking_data:
 
