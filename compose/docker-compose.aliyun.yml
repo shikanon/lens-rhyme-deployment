@@ -4,6 +4,7 @@ services:
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
+      - codex_home:/codex-home
     environment:
       SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
       ALGORITHM: ${ALGORITHM:-HS256}
@@ -42,6 +43,16 @@ services:
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CODEX_HOME: ${CODEX_HOME:-/codex-home}
+      CODEX_AUTO_LOGIN: ${CODEX_AUTO_LOGIN:-true}
+      CHAT_ENGINE: ${CHAT_ENGINE:-codex}
+      CHAT_CODEX_BINARY: ${CHAT_CODEX_BINARY:-codex}
+      CHAT_CODEX_AUTH_MODE: ${CHAT_CODEX_AUTH_MODE:-api_key}
+      CHAT_CODEX_APPROVAL_POLICY: ${CHAT_CODEX_APPROVAL_POLICY:-never}
+      CHAT_CODEX_USE_SELECTED_MODEL: ${CHAT_CODEX_USE_SELECTED_MODEL:-false}
+      CHAT_CODEX_MODEL: ${CHAT_CODEX_MODEL:-gpt-5.4-mini}
+      CHAT_CODEX_ALLOW_WEB_ACCESS: ${CHAT_CODEX_ALLOW_WEB_ACCESS:-false}
+      CHAT_CODEX_WORKDIR_ROOT: ${CHAT_CODEX_WORKDIR_ROOT:-/app/data/codex-workdirs}
       VOLC_TTS_APPID: ${VOLC_TTS_APPID:-}
       VOLC_TTS_TOKEN: ${VOLC_TTS_TOKEN:-}
       VOLC_TTS_VOICE_ID: ${VOLC_TTS_VOICE_ID:-}
@@ -54,6 +65,19 @@ services:
         condition: service_healthy
       openviking:
         condition: service_started
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mkdir -p "$${CODEX_HOME:-/codex-home}"
+        if [ "$${CODEX_AUTO_LOGIN:-true}" = "true" ] && [ -n "$${OPENAI_API_KEY:-}" ] && [ ! -s "$${CODEX_HOME:-/codex-home}/auth.json" ]; then
+          printenv OPENAI_API_KEY | codex login --with-api-key >/tmp/codex-login.log 2>&1 || {
+            cat /tmp/codex-login.log >&2
+            exit 1
+          }
+        fi
+        exec python -m scripts.server start --host 0.0.0.0 --port 8000
     restart: always
 
   openviking:
@@ -165,6 +189,7 @@ services:
 volumes:
   backend_data:
   backend_outputs:
+  codex_home:
   postgres_data:
   openviking_data:
 
