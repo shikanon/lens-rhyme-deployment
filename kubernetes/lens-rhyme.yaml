@@ -93,7 +93,7 @@ data:
         }
 
         location = /docs {
-            return 301 /docs/;
+            return 301 $scheme://$http_host/docs/;
         }
 
         location ^~ /docs/ {
