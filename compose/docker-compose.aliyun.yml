@@ -1,50 +1,129 @@
 services:
+  backend-init:
+    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+    volumes:
+      - backend_data:/app/data
+      - backend_outputs:/app/outputs
+      - codex_home:/codex-home
+    environment:
+      DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
+      BACKEND_DATA_PATH: /app/data
+      BACKEND_OUTPUTS_PATH: /app/outputs
+      ADMIN_DEFAULT_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin123}
+      DEPLOYMENT_INIT_CREATE_ADMIN: ${DEPLOYMENT_INIT_CREATE_ADMIN:-true}
+      DEPLOYMENT_INIT_TEST_DATA: ${DEPLOYMENT_INIT_TEST_DATA:-false}
+      TEST_USER_USERNAME: ${TEST_USER_USERNAME:-test_user}
+      TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:-}
+      DEPLOYMENT_INIT_PLATFORM_CONFIG_JSON: ${DEPLOYMENT_INIT_PLATFORM_CONFIG_JSON:-}
+      DEPLOYMENT_INIT_PLATFORM_CONFIG_FORCE: ${DEPLOYMENT_INIT_PLATFORM_CONFIG_FORCE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - scripts.deployment_init
+    restart: "no"
+
   backend:
     image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
+      - codex_home:/codex-home
     environment:
       SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      HOST: ${HOST:-0.0.0.0}
-      PORT: ${PORT:-8000}
-      DEBUG: ${DEBUG:-False}
-      RELOAD: ${RELOAD:-False}
       DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
       BACKEND_DATA_PATH: /app/data
       BACKEND_OUTPUTS_PATH: /app/outputs
       OPENVIKING_URL: http://openviking:1933
       OPENVIKING_CLIENT_API_KEY: ${OPENVIKING_CLIENT_API_KEY:-lens-rhyme-openviking-local-root-key}
-      OPENVIKING_ACCOUNT: ${OPENVIKING_ACCOUNT:-lens-rhyme}
-      OPENVIKING_USER: ${OPENVIKING_USER:-backend}
       ADMIN_DEFAULT_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin123}
-      TEST_USER_USERNAME: ${TEST_USER_USERNAME:-test_user}
-      TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:-password123}
-      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
-      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
-      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
-      OSS_BUCKET_NAME: ${OSS_BUCKET_NAME:-}
-      OSS_CDN_DOMAIN: ${OSS_CDN_DOMAIN:-}
-      ARK_API_KEY: ${ARK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CODEX_HOME: /codex-home
+      CODEX_AUTO_LOGIN: ${CODEX_AUTO_LOGIN:-true}
+      CHAT_CODEX_APPROVAL_POLICY: never
+      CHAT_CODEX_USE_SELECTED_MODEL: "false"
+      CHAT_CODEX_RUNNER_MANAGER_URL: http://codex-runner-manager:8080
+      CODEX_RUNNER_MANAGER_TOKEN: ${CODEX_RUNNER_MANAGER_TOKEN:-lens-rhyme-runner-local-token}
     depends_on:
+      backend-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       openviking:
         condition: service_started
+      codex-runner-manager:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mkdir -p "$${CODEX_HOME:-/codex-home}"
+        if [ "$${CODEX_AUTO_LOGIN:-true}" = "true" ] && [ -n "$${OPENAI_API_KEY:-}" ] && [ ! -s "$${CODEX_HOME:-/codex-home}/auth.json" ]; then
+          printenv OPENAI_API_KEY | codex login --with-api-key >/tmp/codex-login.log 2>&1 || {
+            cat /tmp/codex-login.log >&2
+            exit 1
+          }
+        fi
+        exec python -m scripts.server start --host 0.0.0.0 --port 8000
+    restart: always
+
+  codex-runner-manager:
+    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+    volumes:
+      - codex_home:/codex-home
+      - codex_runner_data:/app/data
+      - backend_outputs:/app/outputs
+    environment:
+      CODEX_HOME: /codex-home
+      CODEX_AUTO_LOGIN: ${CODEX_AUTO_LOGIN:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CHAT_CODEX_BINARY: codex
+      CHAT_CODEX_APPROVAL_POLICY: never
+      CHAT_CODEX_USE_SELECTED_MODEL: "false"
+      CHAT_CODEX_ALLOW_WEB_ACCESS: "false"
+      CHAT_PLATFORM_CONFIG_ENV_ONLY: "true"
+      CODEX_RUNNER_MANAGER_TOKEN: ${CODEX_RUNNER_MANAGER_TOKEN:-lens-rhyme-runner-local-token}
+      CODEX_RUNNER_WORKDIR_ROOT: /app/data/workdirs
+      CODEX_RUNNER_TURN_TIMEOUT_SECONDS: "600"
+      CODEX_RUNNER_OUTPUT_CHUNK_BYTES: "16384"
+      CODEX_RUNNER_OUTPUT_TURN_BYTES: "16777216"
+      RUNNER_SUBSTRATE: process
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mkdir -p "$${CODEX_HOME:-/codex-home}" "$${CODEX_RUNNER_WORKDIR_ROOT:-/app/data/workdirs}"
+        if [ "$${CODEX_AUTO_LOGIN:-true}" = "true" ] && [ -n "$${OPENAI_API_KEY:-}" ] && [ ! -s "$${CODEX_HOME:-/codex-home}/auth.json" ]; then
+          printenv OPENAI_API_KEY | codex login --with-api-key >/tmp/codex-login.log 2>&1 || {
+            cat /tmp/codex-login.log >&2
+            exit 1
+          }
+        fi
+        exec python -m scripts.runner_manager --host 0.0.0.0 --port 8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     restart: always
 
   openviking:
     image: ghcr.io/volcengine/openviking:latest
     environment:
-      OPENVIKING_API_BASE: ${OPENVIKING_API_BASE:-https://ark.cn-beijing.volces.com/api/v3}
+      OPENVIKING_API_BASE: https://ark.cn-beijing.volces.com/api/v3
       OPENVIKING_API_KEY: ${OPENVIKING_API_KEY:-}
-      OPENVIKING_PROVIDER: ${OPENVIKING_PROVIDER:-volcengine}
-      OPENVIKING_VLM_MODEL: ${OPENVIKING_VLM_MODEL:-doubao-seed-2-0-pro-260215}
-      OPENVIKING_EMBEDDING_MODEL: ${OPENVIKING_EMBEDDING_MODEL:-doubao-embedding-vision-251215}
-      OPENVIKING_EMBEDDING_DIMENSION: ${OPENVIKING_EMBEDDING_DIMENSION:-1024}
-      OPENVIKING_EMBEDDING_INPUT: ${OPENVIKING_EMBEDDING_INPUT:-multimodal}
+      OPENVIKING_PROVIDER: volcengine
+      OPENVIKING_VLM_MODEL: doubao-seed-2-0-pro-260215
+      OPENVIKING_EMBEDDING_MODEL: doubao-embedding-vision-251215
+      OPENVIKING_EMBEDDING_DIMENSION: "1024"
+      OPENVIKING_EMBEDDING_INPUT: multimodal
       OPENVIKING_ROOT_API_KEY: ${OPENVIKING_ROOT_API_KEY:-lens-rhyme-openviking-local-root-key}
     ports:
       - "1933:1933"
@@ -131,6 +210,7 @@ services:
       - source: nginx_config
         target: /etc/nginx/conf.d/default.conf
     ports:
+      - "80:80"
       - "5410:80"
       - "5041:8080"
     depends_on:
@@ -143,6 +223,8 @@ services:
 volumes:
   backend_data:
   backend_outputs:
+  codex_home:
+  codex_runner_data:
   postgres_data:
   openviking_data:
 
@@ -195,7 +277,7 @@ configs:
           }
 
           location = /docs {
-              return 301 /docs/;
+              return 301 $$scheme://$$http_host/docs/;
           }
 
           location ^~ /docs/ {
