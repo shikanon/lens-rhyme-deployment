@@ -79,6 +79,33 @@ scripts/deploy-compose.sh \
 
 The script does not edit `.env`; it only rewrites `.release.env`.
 
+## Migrating From Source-Build Compose
+
+Older single-server deployments may have been started from the application repo
+with bind mounts such as:
+
+```text
+/root/lens-rhyme/backend/data:/app/data
+/root/lens-rhyme/backend/outputs:/app/outputs
+```
+
+The deployment-repo Compose stack uses Docker named volumes instead. Before or
+immediately after the first registry-image deploy, merge the old directories
+into the new volumes:
+
+```bash
+cp -a -n /root/lens-rhyme/backend/data/. \
+  /var/lib/docker/volumes/lens-rhyme_backend_data/_data/
+cp -a -n /root/lens-rhyme/backend/outputs/. \
+  /var/lib/docker/volumes/lens-rhyme_backend_outputs/_data/
+```
+
+Then verify at least one historical output through Nginx, for example:
+
+```bash
+curl -I http://127.0.0.1/outputs/<known-file>
+```
+
 ## Multi-Server Deployment
 
 Keep a small inventory outside this repo and deploy the same tag to each host:
