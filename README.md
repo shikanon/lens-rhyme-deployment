@@ -5,14 +5,16 @@ This repository contains deployment configuration for LensRhyme.
 Application images are built by the LensRhyme CI/CD pipeline and published to
 Aliyun Container Registry:
 
-- `backend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest`
-- `frontend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-frontend:latest`
-- `admin-frontend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend:latest`
-- `docs-site`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site:latest`
+- `backend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:<tag>`
+- `frontend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-frontend:<tag>`
+- `admin-frontend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend:<tag>`
+- `docs-site`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site:<tag>`
 
 ## Directory Layout
 
 - `compose/`: Docker Compose stack using prebuilt registry images.
+- `docs/`: release workflow and CD runbooks.
+- `scripts/`: tag, image-wait, and Compose deployment helpers.
 - `kubernetes/`: raw Kubernetes manifests using prebuilt registry images.
 - `helm/`: reserved for Helm charts.
 - `kustomize/`: reserved for Kustomize overlays.
@@ -28,12 +30,25 @@ resolve as expected.
 Registry image deployment:
 
 ```bash
-docker compose --env-file .env -f compose/docker-compose.yml pull
-docker compose --env-file .env -f compose/docker-compose.yml up -d
+IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml pull
+IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml up -d
 ```
 
 The Compose file is self-contained: it stores backend runtime data in Docker
 named volumes and embeds the Nginx proxy config through Compose `configs`.
+
+For the normal tagged release flow, use:
+
+```bash
+scripts/release-main-to-compose.sh \
+  --app-repo /path/to/lens-rhyme \
+  --host root@101.96.224.33
+```
+
+The script tags the latest application `origin/main`, waits for Aliyun Container
+Registry to expose all four images with the same tag, then deploys that tag on
+the target server. See `docs/tagged-compose-cd.md` for the tag-triggered build
+contract, rollback flow, and multi-server options.
 
 ## Minimal Environment
 

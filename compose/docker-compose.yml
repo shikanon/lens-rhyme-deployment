@@ -1,6 +1,6 @@
 services:
   backend-init:
-    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-backend:${IMAGE_TAG:-latest}
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
@@ -27,7 +27,7 @@ services:
     restart: "no"
 
   backend:
-    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-backend:${IMAGE_TAG:-latest}
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
@@ -73,7 +73,7 @@ services:
     restart: always
 
   codex-runner-manager:
-    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-backend:${IMAGE_TAG:-latest}
     volumes:
       - codex_home:/codex-home
       - codex_runner_data:/app/data
@@ -193,15 +193,15 @@ services:
     restart: always
 
   frontend:
-    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-frontend:latest
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-frontend:${IMAGE_TAG:-latest}
     restart: always
 
   admin-frontend:
-    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend:latest
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-admin-frontend:${IMAGE_TAG:-latest}
     restart: always
 
   docs-site:
-    image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site:latest
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-docs-site:${IMAGE_TAG:-latest}
     restart: always
 
   nginx:
