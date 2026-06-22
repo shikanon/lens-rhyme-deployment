@@ -18,9 +18,15 @@ Run commands from this repository root.
 Aliyun registry deployment:
 
 ```bash
-docker compose --env-file .env -f compose/docker-compose.yml pull
-docker compose --env-file .env -f compose/docker-compose.yml up -d
+IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml pull
+IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml up -d
 ```
+
+`IMAGE_TAG` defaults to `latest` for compatibility. Production releases should
+use immutable tags created from the application repository, then deploy through
+`scripts/release-main-to-compose.sh` or `scripts/deploy-compose.sh`. The deploy
+script writes the selected tag to `.release.env` on the server and leaves the
+secret-bearing `.env` file untouched.
 
 The stack stores `/app/data`, `/app/outputs`, `/codex-home`, and runner-manager
 workdirs in Docker named volumes, uses the backend image's bundled `/app/config`,

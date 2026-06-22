@@ -1,0 +1,136 @@
+# Tagged Docker Compose CD
+
+LensRhyme Compose deployments should use immutable image tags instead of
+rebuilding application source on each server. The release tag is created in the
+application repository, the application CD workflow builds and pushes all
+application images to Aliyun Container Registry with that same tag, and each
+server pulls that tag through this deployment repo.
+
+## Release Contract
+
+- Application source of truth: `shikanon/lens-rhyme`.
+- Deployment source of truth: `shikanon/lens-rhyme-deployment`.
+- Registry namespace: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme`.
+- Release tag format: `deploy-YYYYMMDDHHMMSS-<shortsha>`.
+- Compose runtime override file: `.release.env`, generated on the server.
+
+`IMAGE_TAG` defaults to `latest` so existing environments continue to start, but
+production releases should always pass a release tag.
+
+## Image Build Trigger
+
+The current implementation uses the application repository GitHub Actions `CD`
+workflow. A push to a `deploy-*` Git tag builds all four images and pushes them
+to Aliyun Container Registry.
+
+| ACR repository | Build context | Dockerfile |
+| --- | --- | --- |
+| `lens-rhyme-backend` | `/backend` | `Dockerfile` |
+| `lens-rhyme-frontend` | `/frontend` | `Dockerfile` |
+| `lens-rhyme-admin-frontend` | `/admin-frontend` | `Dockerfile` |
+| `lens-rhyme-docs-site` | `/docs-site` | `Dockerfile` |
+
+The ACR Personal Edition console was checked on 2026-06-22. Its custom build
+rule form accepts a tag pattern, but the image version field rejects `$version`;
+the only built-in `release-v$version` rule builds from the repository root, so
+it does not fit this monorepo. Keep ACR as the registry and use GitHub Actions
+for tag-triggered monorepo builds unless the project moves to ACR Enterprise
+Edition or another build service with dynamic image tag mapping.
+
+## One-Command Release
+
+Run from this repository after the ACR rules exist:
+
+```bash
+scripts/release-main-to-compose.sh \
+  --app-repo /Users/bytedance/Documents/lens-rhyme \
+  --host root@101.96.224.33
+```
+
+What it does:
+
+1. Fetches the application repo remote branch, defaulting to `origin/main`.
+2. Creates and pushes a `deploy-*` release tag at the remote branch commit.
+3. Lets the application CD workflow build all four images from that tag.
+4. Waits until all four ACR images exist with the same tag.
+5. SSHes to the server, writes `.release.env`, pulls the tag, runs Compose, and
+   checks `http://127.0.0.1/` plus `http://127.0.0.1/docs/`.
+
+For password-based temporary access:
+
+```bash
+SSHPASS='***' scripts/release-main-to-compose.sh \
+  --app-repo /Users/bytedance/Documents/lens-rhyme \
+  --host root@101.96.224.33 \
+  --ssh-option StrictHostKeyChecking=no
+```
+
+Prefer SSH keys for repeated deployments.
+
+## Deploy an Existing Tag
+
+Use this when ACR already has the images or when rolling back:
+
+```bash
+scripts/deploy-compose.sh \
+  --host root@101.96.224.33 \
+  --tag deploy-20260622120000-7cf974f
+```
+
+The script does not edit `.env`; it only rewrites `.release.env`.
+
+## Migrating From Source-Build Compose
+
+Older single-server deployments may have been started from the application repo
+with bind mounts such as:
+
+```text
+/root/lens-rhyme/backend/data:/app/data
+/root/lens-rhyme/backend/outputs:/app/outputs
+```
+
+The deployment-repo Compose stack uses Docker named volumes instead. Before or
+immediately after the first registry-image deploy, merge the old directories
+into the new volumes:
+
+```bash
+cp -a -n /root/lens-rhyme/backend/data/. \
+  /var/lib/docker/volumes/lens-rhyme_backend_data/_data/
+cp -a -n /root/lens-rhyme/backend/outputs/. \
+  /var/lib/docker/volumes/lens-rhyme_backend_outputs/_data/
+```
+
+Then verify at least one historical output through Nginx, for example:
+
+```bash
+curl -I http://127.0.0.1/outputs/<known-file>
+```
+
+## Multi-Server Deployment
+
+Keep a small inventory outside this repo and deploy the same tag to each host:
+
+```bash
+tag=deploy-20260622120000-7cf974f
+while read -r host; do
+  scripts/deploy-compose.sh --host "$host" --tag "$tag"
+done < hosts.txt
+```
+
+For more than a handful of servers, graduate this flow to Ansible or a GitHub
+Actions environment matrix. The same contract still applies: one release tag,
+four images, many Compose targets.
+
+## Better CD Options
+
+GitHub Actions tag builds plus these scripts are the lowest-friction path
+because they fit the current Compose servers. The next step up is a fuller
+release pipeline:
+
+- build and push all four images with Docker Buildx.
+- use environments for staging/production approvals.
+- deploy to multiple hosts through an inventory matrix.
+- publish a release summary with image digests and health-check results.
+
+For Kubernetes-first environments, use Argo CD or Flux against Helm/Kustomize
+manifests and pin image digests instead of tags.
