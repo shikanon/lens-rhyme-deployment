@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
+
 HOST=""
 DEPLOY_DIR="/root/lens-rhyme-deployment"
 DEPLOYMENT_REPO="${DEPLOYMENT_REPO:-https://github.com/shikanon/lens-rhyme-deployment.git}"
@@ -18,7 +21,7 @@ SSH_OPTS=()
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/bootstrap-compose-host.sh --host <user@host> [options]
+  scripts/bootstrap-compose-host.sh [--host <user@host-or-ip>] [options]
 
 Options:
   --dir <path>               Remote deployment repo. Defaults to /root/lens-rhyme-deployment.
@@ -42,6 +45,11 @@ Optional local environment variables copied into the remote .env:
 If SSHPASS is set and sshpass is installed, the script uses sshpass -e for
 password-based hosts and prefers password authentication. Prefer SSH keys for
 normal operation.
+
+If --host is omitted, the script uses DEPLOY_HOST or prompts for a server
+host/IP. A bare IP or hostname is treated as root@host. If SSHPASS is omitted,
+DEPLOY_SSH_PASSWORD is used; otherwise the script prompts for a password when
+running interactively with sshpass installed.
 EOF
 }
 
@@ -107,11 +115,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$HOST" ]]; then
-  echo "--host is required" >&2
-  usage >&2
-  exit 2
-fi
+HOST="$(resolve_deploy_host "$HOST")"
+prepare_ssh_password
 
 SSH_CMD=("$SSH_BIN")
 if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
@@ -298,4 +303,4 @@ for ((i = 0; i < ${#SSH_OPTS[@]}; i += 2)); do
   deploy_args+=(--ssh-option "${SSH_OPTS[$((i + 1))]}")
 done
 
-"$(dirname "$0")/deploy-compose.sh" "${deploy_args[@]}"
+"${SCRIPT_DIR}/deploy-compose.sh" "${deploy_args[@]}"

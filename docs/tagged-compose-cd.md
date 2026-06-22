@@ -43,8 +43,7 @@ Run from this repository after the ACR rules exist:
 
 ```bash
 scripts/release-main-to-compose.sh \
-  --app-repo /Users/bytedance/Documents/lens-rhyme \
-  --host root@101.96.224.33
+  --app-repo /path/to/lens-rhyme
 ```
 
 What it does:
@@ -63,13 +62,19 @@ auth or network resets do not fail the whole rollout immediately.
 For password-based temporary access:
 
 ```bash
-SSHPASS='***' scripts/release-main-to-compose.sh \
-  --app-repo /Users/bytedance/Documents/lens-rhyme \
-  --host root@101.96.224.33 \
-  --ssh-option StrictHostKeyChecking=no
+DEPLOY_HOST=root@<server-ip> DEPLOY_SSH_PASSWORD='***' \
+scripts/release-main-to-compose.sh \
+  --app-repo /path/to/lens-rhyme \
+  --ssh-option StrictHostKeyChecking=no \
+  --ssh-option UserKnownHostsFile=/dev/null
 ```
 
 Prefer SSH keys for repeated deployments.
+
+If neither `--host` nor `DEPLOY_HOST` is set, the script prompts for a server
+host/IP. A bare IP or hostname is treated as `root@host`. If neither `SSHPASS`
+nor `DEPLOY_SSH_PASSWORD` is set, the script prompts for a password when running
+interactively with `sshpass` installed; leave it empty to use SSH keys.
 
 ## Cold Server Bootstrap
 
@@ -86,7 +91,6 @@ VIDEO_API_KEY='***' \
 VOLC_TTS_APPID='***' \
 VOLC_TTS_TOKEN='***' \
 scripts/bootstrap-compose-host.sh \
-  --host root@150.5.131.152 \
   --tag deploy-20260622120000-7cf974f \
   --ssh-option StrictHostKeyChecking=no \
   --ssh-option UserKnownHostsFile=/dev/null
@@ -113,7 +117,6 @@ Use this when ACR already has the images or when rolling back:
 
 ```bash
 scripts/deploy-compose.sh \
-  --host root@101.96.224.33 \
   --tag deploy-20260622120000-7cf974f
 ```
 
@@ -153,7 +156,7 @@ Keep a small inventory outside this repo and deploy the same tag to each host:
 ```bash
 tag=deploy-20260622120000-7cf974f
 while read -r host; do
-  scripts/deploy-compose.sh --host "$host" --tag "$tag"
+  DEPLOY_HOST="$host" scripts/deploy-compose.sh --tag "$tag"
 done < hosts.txt
 ```
 

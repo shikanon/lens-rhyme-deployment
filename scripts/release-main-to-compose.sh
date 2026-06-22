@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
 
 APP_REPO="${APP_REPO:-${REPO_ROOT}/../lens-rhyme}"
 APP_REMOTE="${APP_REMOTE:-origin}"
@@ -22,7 +23,7 @@ SSH_ARGS=()
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/release-main-to-compose.sh --host <user@host> [options]
+  scripts/release-main-to-compose.sh [--host <user@host-or-ip>] [options]
 
 Options:
   --app-repo <path>          LensRhyme application repo. Defaults to ../lens-rhyme.
@@ -43,6 +44,11 @@ Options:
 The script releases the latest remote main commit, not local uncommitted work.
 The application repo CD workflow should build and push all four images when the
 release tag is pushed.
+
+If --host is omitted, the script uses DEPLOY_HOST or prompts for a server
+host/IP unless --skip-deploy is set. A bare IP or hostname is treated as
+root@host. If SSHPASS is omitted, DEPLOY_SSH_PASSWORD is used; otherwise the
+script prompts for a password when running interactively with sshpass installed.
 EOF
 }
 
@@ -116,10 +122,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$SKIP_DEPLOY" != "true" && -z "$HOST" ]]; then
-  echo "--host is required unless --skip-deploy is set" >&2
-  usage >&2
-  exit 2
+if [[ "$SKIP_DEPLOY" != "true" ]]; then
+  HOST="$(resolve_deploy_host "$HOST")"
+  prepare_ssh_password
 fi
 
 if [[ ! -d "${APP_REPO}/.git" ]]; then

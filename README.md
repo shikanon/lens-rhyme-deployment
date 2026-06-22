@@ -41,14 +41,14 @@ For the normal tagged release flow, use:
 
 ```bash
 scripts/release-main-to-compose.sh \
-  --app-repo /path/to/lens-rhyme \
-  --host root@101.96.224.33
+  --app-repo /path/to/lens-rhyme
 ```
 
-The script tags the latest application `origin/main`, waits for Aliyun Container
-Registry to expose all four images with the same tag, then deploys that tag on
-the target server. See `docs/tagged-compose-cd.md` for the tag-triggered build
-contract, rollback flow, and multi-server options.
+The script prompts for the target server host/IP and SSH password when they are
+not provided. It tags the latest application `origin/main`, waits for Aliyun
+Container Registry to expose all four images with the same tag, then deploys
+that tag on the target server. See `docs/tagged-compose-cd.md` for the
+tag-triggered build contract, rollback flow, and multi-server options.
 
 For a brand-new server that does not yet have this deployment repository or a
 `.env` file, bootstrap it first:
@@ -56,8 +56,14 @@ For a brand-new server that does not yet have this deployment repository or a
 ```bash
 ARK_API_KEY=... OPENVIKING_API_KEY=... \
 scripts/bootstrap-compose-host.sh \
-  --host root@150.5.131.152 \
   --tag deploy-20260622120000-7cf974f
+```
+
+For non-interactive runs, pass the server through environment variables:
+
+```bash
+DEPLOY_HOST=root@<server-ip> DEPLOY_SSH_PASSWORD='***' \
+scripts/bootstrap-compose-host.sh --tag deploy-20260622120000-7cf974f
 ```
 
 The bootstrap script installs no application code on the server. It checks for

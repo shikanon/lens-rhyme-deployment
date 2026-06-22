@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
+
 HOST=""
 DEPLOY_DIR="/root/lens-rhyme-deployment"
 COMPOSE_FILE="compose/docker-compose.yml"
@@ -15,7 +18,7 @@ SSH_OPTS=()
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/deploy-compose.sh --host <user@host> --tag <image-tag> [options]
+  scripts/deploy-compose.sh [--host <user@host-or-ip>] --tag <image-tag> [options]
 
 Options:
   --dir <path>               Remote deployment repo. Defaults to /root/lens-rhyme-deployment.
@@ -30,6 +33,11 @@ Options:
 If SSHPASS is set and sshpass is installed, the script uses sshpass -e for
 password-based hosts and prefers password authentication. Prefer SSH keys for
 normal operation.
+
+If --host is omitted, the script uses DEPLOY_HOST or prompts for a server
+host/IP. A bare IP or hostname is treated as root@host. If SSHPASS is omitted,
+DEPLOY_SSH_PASSWORD is used; otherwise the script prompts for a password when
+running interactively with sshpass installed.
 EOF
 }
 
@@ -83,11 +91,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$HOST" || -z "$TAG" ]]; then
-  echo "--host and --tag are required" >&2
+if [[ -z "$TAG" ]]; then
+  echo "--tag is required" >&2
   usage >&2
   exit 2
 fi
+
+HOST="$(resolve_deploy_host "$HOST")"
+prepare_ssh_password
 
 SSH_CMD=("$SSH_BIN")
 if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
