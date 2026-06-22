@@ -28,7 +28,8 @@ Options:
   -h, --help                 Show this help.
 
 If SSHPASS is set and sshpass is installed, the script uses sshpass -e for
-password-based hosts. Prefer SSH keys for normal operation.
+password-based hosts and prefers password authentication. Prefer SSH keys for
+normal operation.
 EOF
 }
 
@@ -91,6 +92,7 @@ fi
 SSH_CMD=("$SSH_BIN")
 if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
   SSH_CMD=(sshpass -e "$SSH_BIN")
+  SSH_OPTS=(-o PreferredAuthentications=password -o PubkeyAuthentication=no "${SSH_OPTS[@]}")
 fi
 
 printf -v q_deploy_dir '%q' "$DEPLOY_DIR"
@@ -134,11 +136,33 @@ compose=(docker compose --env-file .env --env-file .release.env -f "$COMPOSE_FIL
 echo "Validating Compose config for image tag ${IMAGE_TAG}..."
 "${compose[@]}" config >/tmp/lens-rhyme-compose-config.yml
 
-echo "Pulling LensRhyme images for tag ${IMAGE_TAG}..."
-"${compose[@]}" pull backend-init backend codex-runner-manager frontend admin-frontend docs-site
+pull_service() {
+  local service="$1"
+  local attempt
+  local max_attempts=3
+
+  for attempt in $(seq 1 "$max_attempts"); do
+    if "${compose[@]}" pull --quiet "$service"; then
+      return 0
+    fi
+
+    if [[ "$attempt" == "$max_attempts" ]]; then
+      echo "Pull failed for ${service} after ${max_attempts} attempts." >&2
+      return 1
+    fi
+
+    echo "Pull failed for ${service}; retrying in $((attempt * 10))s..." >&2
+    sleep $((attempt * 10))
+  done
+}
+
+echo "Pulling Compose images for tag ${IMAGE_TAG}..."
+for service in backend-init frontend admin-frontend docs-site openviking postgres nginx; do
+  pull_service "$service"
+done
 
 echo "Starting LensRhyme Compose stack..."
-"${compose[@]}" up -d
+"${compose[@]}" up -d --pull missing --quiet-pull
 
 echo "Compose services:"
 "${compose[@]}" ps
