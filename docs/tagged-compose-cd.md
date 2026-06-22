@@ -56,6 +56,10 @@ What it does:
 5. SSHes to the server, writes `.release.env`, pulls the tag, runs Compose, and
    checks `http://127.0.0.1/` plus `http://127.0.0.1/docs/`.
 
+Image pulls, including Compose sidecars such as Postgres, Nginx, and
+OpenViking, are executed service-by-service with retries so transient registry
+auth or network resets do not fail the whole rollout immediately.
+
 For password-based temporary access:
 
 ```bash
@@ -66,6 +70,42 @@ SSHPASS='***' scripts/release-main-to-compose.sh \
 ```
 
 Prefer SSH keys for repeated deployments.
+
+## Cold Server Bootstrap
+
+Use this when a new server has Docker, Compose, Git, and curl, but does not yet
+have `/root/lens-rhyme-deployment` or a `.env` file:
+
+```bash
+SSHPASS='***' \
+ARK_API_KEY='***' \
+OPENVIKING_API_KEY='***' \
+LLM_API_KEY='***' \
+IMAGE_API_KEY='***' \
+VIDEO_API_KEY='***' \
+VOLC_TTS_APPID='***' \
+VOLC_TTS_TOKEN='***' \
+scripts/bootstrap-compose-host.sh \
+  --host root@150.5.131.152 \
+  --tag deploy-20260622120000-7cf974f \
+  --ssh-option StrictHostKeyChecking=no \
+  --ssh-option UserKnownHostsFile=/dev/null
+```
+
+What it does:
+
+1. Verifies the remote host has Git, Docker, Compose, and curl.
+2. Clones or updates `shikanon/lens-rhyme-deployment` into the deployment dir.
+3. Writes `.env` with mode `600` when it is missing, including randomized
+   internal tokens and optional platform credentials from local environment
+   variables.
+4. Converts model/TTS credentials into `DEPLOYMENT_INIT_PLATFORM_CONFIG_JSON` so
+   the first `backend-init` run can seed Admin Platform Configuration.
+5. Calls `scripts/deploy-compose.sh` for the requested image tag.
+
+Use `--skip-deploy` when you only want to prepare the host before creating the
+release tag. Use `--force-env` only when intentionally replacing the server's
+existing runtime secrets.
 
 ## Deploy an Existing Tag
 

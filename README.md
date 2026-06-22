@@ -50,6 +50,22 @@ Registry to expose all four images with the same tag, then deploys that tag on
 the target server. See `docs/tagged-compose-cd.md` for the tag-triggered build
 contract, rollback flow, and multi-server options.
 
+For a brand-new server that does not yet have this deployment repository or a
+`.env` file, bootstrap it first:
+
+```bash
+ARK_API_KEY=... OPENVIKING_API_KEY=... \
+scripts/bootstrap-compose-host.sh \
+  --host root@150.5.131.152 \
+  --tag deploy-20260622120000-7cf974f
+```
+
+The bootstrap script installs no application code on the server. It checks for
+Git, Docker, Compose, and curl, clones this deployment repository, writes a
+permission-restricted `.env` with randomized internal secrets, optionally seeds
+Admin Platform Configuration defaults, then delegates the actual Compose rollout
+to `scripts/deploy-compose.sh`.
+
 ## Minimal Environment
 
 Docker Compose reads optional overrides from a `.env` file in the repository
