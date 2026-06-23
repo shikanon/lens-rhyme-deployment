@@ -18,6 +18,7 @@ WAIT_INTERVAL=30
 SKIP_WAIT=false
 SKIP_DEPLOY=false
 DEPLOYMENT_REF=""
+RUN_SMOKE_TEST=false
 SSH_ARGS=()
 
 usage() {
@@ -38,6 +39,7 @@ Options:
   --wait-interval <seconds>  ACR image poll interval. Defaults to 30.
   --skip-wait                Do not wait for registry images before deployment.
   --skip-deploy              Create/push the tag and wait for images, but do not SSH deploy.
+  --run-smoke-test           Run post-deploy smoke tests after Compose route checks.
   --ssh-option <option>      Extra ssh -o option passed through to deploy-compose.sh.
   -h, --help                 Show this help.
 
@@ -104,6 +106,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-deploy)
       SKIP_DEPLOY=true
+      shift
+      ;;
+    --run-smoke-test)
+      RUN_SMOKE_TEST=true
       shift
       ;;
     --ssh-option)
@@ -177,6 +183,9 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
 
   if [[ -n "$DEPLOYMENT_REF" ]]; then
     deploy_args+=(--deployment-ref "$DEPLOYMENT_REF")
+  fi
+  if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
+    deploy_args+=(--run-smoke-test)
   fi
 
   "${SCRIPT_DIR}/deploy-compose.sh" "${deploy_args[@]}" "${SSH_ARGS[@]}"

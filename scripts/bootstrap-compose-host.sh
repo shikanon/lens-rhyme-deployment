@@ -15,6 +15,7 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-lens-rhyme}"
 FORCE_ENV=false
 SKIP_DEPLOY=false
 ALLOW_DIRTY=false
+RUN_SMOKE_TEST=false
 SSH_BIN="${SSH_BIN:-ssh}"
 SSH_OPTS=()
 
@@ -34,6 +35,7 @@ Options:
   --force-env                Replace an existing remote .env file.
   --skip-deploy              Bootstrap repo and .env only; do not run Compose.
   --allow-dirty              Allow checkout even when the remote deployment repo has local changes.
+  --run-smoke-test           Run post-deploy smoke tests after Compose route checks.
   --ssh-option <option>      Extra ssh -o option. Repeat for multiple options.
   -h, --help                 Show this help.
 
@@ -97,6 +99,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --allow-dirty)
       ALLOW_DIRTY=true
+      shift
+      ;;
+    --run-smoke-test)
+      RUN_SMOKE_TEST=true
       shift
       ;;
     --ssh-option)
@@ -298,6 +304,9 @@ deploy_args=(
 )
 if [[ "$ALLOW_DIRTY" == "true" ]]; then
   deploy_args+=(--allow-dirty)
+fi
+if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
+  deploy_args+=(--run-smoke-test)
 fi
 for ((i = 0; i < ${#SSH_OPTS[@]}; i += 2)); do
   deploy_args+=(--ssh-option "${SSH_OPTS[$((i + 1))]}")

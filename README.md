@@ -72,6 +72,43 @@ permission-restricted `.env` with randomized internal secrets, optionally seeds
 Admin Platform Configuration defaults, then delegates the actual Compose rollout
 to `scripts/deploy-compose.sh`.
 
+## Post-Deploy Smoke Test
+
+Use `scripts/smoke-test-compose.py` to verify that a deployed stack can run the
+core product flows after Compose is up. The script reads Super Admin credentials
+from `.env` by default, creates a temporary test user, recharges 1000 credits,
+logs in as that user, then validates:
+
+- Studio audio generation.
+- Studio image generation.
+- Studio video generation.
+- Studio 3D generation.
+- Workbench import of
+  `http://cdn.ai.tensorbytes.com/test/workbench/test.docx`.
+
+Run it directly on a deployed server:
+
+```bash
+python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
+```
+
+Or run it automatically after deployment:
+
+```bash
+scripts/deploy-compose.sh \
+  --tag deploy-20260622120000-7cf974f \
+  --run-smoke-test
+```
+
+The same flag is also available on `scripts/bootstrap-compose-host.sh` and
+`scripts/release-main-to-compose.sh`. The smoke test performs real model
+generation unless the deployed backend is configured for generation mock mode,
+so run it in staging or controlled production validation windows. Use
+`--skip-studio`, `--skip-workbench`, or `SMOKE_TEST_*` environment overrides for
+partial checks and future extensions. Automatic post-deploy validation requires
+`python3` on the remote host; the deploy script checks this before running the
+smoke test.
+
 ## Minimal Environment
 
 Docker Compose reads optional overrides from a `.env` file in the repository
