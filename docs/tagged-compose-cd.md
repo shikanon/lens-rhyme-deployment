@@ -71,6 +71,12 @@ scripts/release-main-to-compose.sh \
 
 Prefer SSH keys for repeated deployments.
 
+Add `--run-smoke-test` when the deploy should immediately run the fixed product
+smoke test after the route checks. The smoke test creates a temporary user,
+recharges 1000 credits, exercises Studio audio/image/video/3D generation, and
+imports the Workbench test document from
+`http://cdn.ai.tensorbytes.com/test/workbench/test.docx`.
+
 If neither `--host` nor `DEPLOY_HOST` is set, the script prompts for a server
 host/IP. A bare IP or hostname is treated as `root@host`. If neither `SSHPASS`
 nor `DEPLOY_SSH_PASSWORD` is set, the script prompts for a password when running
@@ -92,6 +98,7 @@ VOLC_TTS_APPID='***' \
 VOLC_TTS_TOKEN='***' \
 scripts/bootstrap-compose-host.sh \
   --tag deploy-20260622120000-7cf974f \
+  --run-smoke-test \
   --ssh-option StrictHostKeyChecking=no \
   --ssh-option UserKnownHostsFile=/dev/null
 ```
@@ -117,10 +124,22 @@ Use this when ACR already has the images or when rolling back:
 
 ```bash
 scripts/deploy-compose.sh \
-  --tag deploy-20260622120000-7cf974f
+  --tag deploy-20260622120000-7cf974f \
+  --run-smoke-test
 ```
 
 The script does not edit `.env`; it only rewrites `.release.env`.
+
+To run only the validation script on a server where Compose is already up:
+
+```bash
+cd /root/lens-rhyme-deployment
+python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
+```
+
+Useful overrides include `--skip-studio`, `--skip-workbench`,
+`--keep-test-user`, `SMOKE_TEST_MODEL3D_REFERENCE_IMAGE_URL`, and
+`SMOKE_TEST_POLL_TIMEOUT`.
 
 ## Migrating From Source-Build Compose
 

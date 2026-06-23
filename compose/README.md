@@ -26,7 +26,8 @@ IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compos
 use immutable tags created from the application repository, then deploy through
 `scripts/release-main-to-compose.sh` or `scripts/deploy-compose.sh`. The deploy
 script writes the selected tag to `.release.env` on the server and leaves the
-secret-bearing `.env` file untouched.
+secret-bearing `.env` file untouched. Add `--run-smoke-test` to run the fixed
+post-deploy validation script after the stack starts.
 
 The stack stores `/app/data`, `/app/outputs`, `/codex-home`, and runner-manager
 workdirs in Docker named volumes, uses the backend image's bundled `/app/config`,
@@ -65,6 +66,12 @@ Configuration-only update:
 
 ```bash
 docker compose --env-file .env -f compose/docker-compose.yml up -d
+```
+
+Post-deploy validation for an already running stack:
+
+```bash
+python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
 ```
 
 When adding another Compose stack, keep it in this directory and document the target environment here.
