@@ -175,7 +175,7 @@ pull_service() {
 }
 
 echo "Pulling Compose images for tag ${IMAGE_TAG}..."
-for service in backend-init frontend admin-frontend docs-site openviking postgres nginx; do
+for service in backend-init frontend admin-frontend docs-site; do
   pull_service "$service"
 done
 
@@ -203,6 +203,24 @@ check_url() {
 
 check_url "http://127.0.0.1/"
 check_url "http://127.0.0.1/docs/"
+
+check_get_url() {
+  local url="$1"
+  local attempts=30
+
+  for attempt in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      echo "OK ${url}"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Health check failed for ${url}" >&2
+  return 1
+}
+
+check_get_url "http://127.0.0.1/api/v1/admin/landing-config"
 
 if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
   if ! command -v python3 >/dev/null 2>&1; then
