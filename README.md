@@ -37,6 +37,11 @@ IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compos
 The Compose file is self-contained: it stores backend runtime data in Docker
 named volumes and embeds the Nginx proxy config through Compose `configs`.
 
+For fast single-server self-host deployments that build images on the target
+machine instead of pushing them through Aliyun Container Registry, use
+`scripts/self-host-compose-cd.sh`. See
+[`docs/self-host-compose-cd.md`](docs/self-host-compose-cd.md).
+
 For the normal tagged release flow, use:
 
 ```bash
