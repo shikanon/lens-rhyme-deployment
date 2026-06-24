@@ -596,6 +596,12 @@ def build_parser(dotenv: dict[str, str]) -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
     preliminary = argparse.ArgumentParser(add_help=False)
     preliminary.add_argument("--env-file", default=os.getenv("SMOKE_TEST_ENV_FILE", ".env"))
     known, _ = preliminary.parse_known_args()
