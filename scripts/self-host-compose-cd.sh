@@ -297,10 +297,19 @@ ensure_app_repo() {
 build_image() {
   local image="$1"
   local context="$2"
+  local buildkit="${DOCKER_BUILDKIT:-}"
   shift 2
 
   echo "Building ${IMAGE_REGISTRY}/${image}:${IMAGE_TAG} from ${context}..."
-  DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}" docker build \
+  if [[ -z "$buildkit" ]]; then
+    if docker buildx version >/dev/null 2>&1; then
+      buildkit=1
+    else
+      buildkit=0
+    fi
+  fi
+
+  DOCKER_BUILDKIT="$buildkit" docker build \
     --pull \
     "$@" \
     -t "${IMAGE_REGISTRY}/${image}:${IMAGE_TAG}" \
