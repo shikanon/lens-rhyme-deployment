@@ -13,6 +13,7 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-lens-rhyme}"
 DEPLOYMENT_REF=""
 ALLOW_DIRTY=false
 RUN_SMOKE_TEST=false
+SMOKE_TEST_BASE_URL="${SMOKE_TEST_BASE_URL:-http://127.0.0.1}"
 SSH_BIN="${SSH_BIN:-ssh}"
 SSH_OPTS=()
 
@@ -29,6 +30,7 @@ Options:
   --deployment-ref <ref>     Optional deployment repo branch/tag to fetch and check out before deploy.
   --allow-dirty              Allow checkout even when the remote deployment repo has local changes.
   --run-smoke-test           Run scripts/smoke-test-compose.py after the basic route checks.
+  --smoke-test-base-url <url> Base URL used by route checks and smoke tests. Defaults to http://127.0.0.1.
   --ssh-option <option>      Extra ssh -o option. Repeat for multiple options.
   -h, --help                 Show this help.
 
@@ -81,6 +83,10 @@ while [[ $# -gt 0 ]]; do
       RUN_SMOKE_TEST=true
       shift
       ;;
+    --smoke-test-base-url)
+      SMOKE_TEST_BASE_URL="${2:?missing smoke test base url}"
+      shift 2
+      ;;
     --ssh-option)
       SSH_OPTS+=(-o "${2:?missing ssh option}")
       shift 2
@@ -120,9 +126,10 @@ printf -v q_project '%q' "$COMPOSE_PROJECT_NAME"
 printf -v q_deployment_ref '%q' "$DEPLOYMENT_REF"
 printf -v q_allow_dirty '%q' "$ALLOW_DIRTY"
 printf -v q_run_smoke_test '%q' "$RUN_SMOKE_TEST"
+printf -v q_smoke_test_base_url '%q' "$SMOKE_TEST_BASE_URL"
 
 "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "$HOST" \
-  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} bash -s" <<'REMOTE_SCRIPT'
+  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 cd "$DEPLOY_DIR"
@@ -201,8 +208,8 @@ check_url() {
   return 1
 }
 
-check_url "http://127.0.0.1/"
-check_url "http://127.0.0.1/docs/"
+check_url "${SMOKE_TEST_BASE_URL%/}/"
+check_url "${SMOKE_TEST_BASE_URL%/}/docs/"
 
 if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
   if ! command -v python3 >/dev/null 2>&1; then
@@ -211,6 +218,6 @@ if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
   fi
 
   echo "Running LensRhyme post-deploy smoke test..."
-  python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
+  python3 scripts/smoke-test-compose.py --base-url "$SMOKE_TEST_BASE_URL"
 fi
 REMOTE_SCRIPT

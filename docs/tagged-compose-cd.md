@@ -76,6 +76,8 @@ smoke test after the route checks. The smoke test creates a temporary user,
 recharges 1000 credits, exercises Studio audio/image/video/3D generation, and
 imports the Workbench test document from
 `http://cdn.ai.tensorbytes.com/test/workbench/test.docx`.
+Pass `--smoke-test-base-url <url>` when the validation should target a server
+IP or public domain instead of the default `http://127.0.0.1`.
 
 If neither `--host` nor `DEPLOY_HOST` is set, the script prompts for a server
 host/IP. A bare IP or hostname is treated as `root@host`. If neither `SSHPASS`
@@ -99,6 +101,7 @@ VOLC_TTS_TOKEN='***' \
 scripts/bootstrap-compose-host.sh \
   --tag deploy-20260622120000-7cf974f \
   --run-smoke-test \
+  --smoke-test-base-url https://lens.example.com \
   --ssh-option StrictHostKeyChecking=no \
   --ssh-option UserKnownHostsFile=/dev/null
 ```
@@ -125,7 +128,8 @@ Use this when ACR already has the images or when rolling back:
 ```bash
 scripts/deploy-compose.sh \
   --tag deploy-20260622120000-7cf974f \
-  --run-smoke-test
+  --run-smoke-test \
+  --smoke-test-base-url https://lens.example.com
 ```
 
 The script does not edit `.env`; it only rewrites `.release.env`.
@@ -136,6 +140,9 @@ To run only the validation script on a server where Compose is already up:
 cd /root/lens-rhyme-deployment
 python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
 ```
+
+Replace `http://127.0.0.1` with the server address or public domain when the
+validation should exercise the externally reachable route.
 
 Useful overrides include `--skip-studio`, `--skip-workbench`,
 `--keep-test-user`, `SMOKE_TEST_MODEL3D_REFERENCE_IMAGE_URL`, and

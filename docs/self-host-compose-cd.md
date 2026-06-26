@@ -41,9 +41,11 @@ What it does on the target server:
 5. Writes `.release.env` with the local image namespace and tag.
 6. Pulls only sidecar images such as Postgres, Nginx, and OpenViking.
 7. Runs Docker Compose and checks `http://127.0.0.1/` plus
-   `http://127.0.0.1/docs/`.
+   `http://127.0.0.1/docs/` by default.
 
-Add `--run-smoke-test` to run the product smoke test after route checks.
+Add `--run-smoke-test` to run the product smoke test after route checks. Pass
+`--smoke-test-base-url <url>` when route checks and smoke tests should target a
+server IP or public domain instead of the default local Compose route.
 
 ## Protect Existing Server Work
 

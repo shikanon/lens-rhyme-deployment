@@ -21,6 +21,7 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org/}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple/}"
 RUN_SMOKE_TEST=false
+SMOKE_TEST_BASE_URL="${SMOKE_TEST_BASE_URL:-http://127.0.0.1}"
 SKIP_ROUTE_CHECKS=false
 ALLOW_DIRTY_APP=false
 ALLOW_DIRTY_DEPLOY=false
@@ -52,6 +53,7 @@ Options:
   --allow-dirty-app              Allow deploying from a dirty app clone.
   --allow-dirty-deploy           Allow switching a dirty remote deployment repo.
   --run-smoke-test               Run scripts/smoke-test-compose.py after route checks.
+  --smoke-test-base-url <url>    Base URL used by route checks and smoke tests. Defaults to http://127.0.0.1.
   --skip-route-checks            Skip local HTTP route checks.
   --ssh-option <option>          Extra ssh -o option. Repeat for multiple options.
   -h, --help                     Show this help.
@@ -137,6 +139,10 @@ while [[ $# -gt 0 ]]; do
       RUN_SMOKE_TEST=true
       shift
       ;;
+    --smoke-test-base-url)
+      SMOKE_TEST_BASE_URL="${2:?missing smoke test base url}"
+      shift 2
+      ;;
     --skip-route-checks)
       SKIP_ROUTE_CHECKS=true
       shift
@@ -208,6 +214,7 @@ run_remote() {
   if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
     remote_args+=(--run-smoke-test)
   fi
+  remote_args+=(--smoke-test-base-url "$SMOKE_TEST_BASE_URL")
   if [[ "$SKIP_ROUTE_CHECKS" == "true" ]]; then
     remote_args+=(--skip-route-checks)
   fi
@@ -401,8 +408,8 @@ run_local() {
   "${compose[@]}" ps
 
   if [[ "$SKIP_ROUTE_CHECKS" != "true" ]]; then
-    check_url "http://127.0.0.1/"
-    check_url "http://127.0.0.1/docs/"
+    check_url "${SMOKE_TEST_BASE_URL%/}/"
+    check_url "${SMOKE_TEST_BASE_URL%/}/docs/"
   fi
 
   if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
@@ -410,7 +417,7 @@ run_local() {
       echo "python3 is required on the host to run scripts/smoke-test-compose.py." >&2
       exit 1
     fi
-    python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
+    python3 scripts/smoke-test-compose.py --base-url "$SMOKE_TEST_BASE_URL"
   fi
 
   echo "Self-host Compose CD completed for ${IMAGE_TAG}."

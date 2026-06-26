@@ -19,6 +19,7 @@ SKIP_WAIT=false
 SKIP_DEPLOY=false
 DEPLOYMENT_REF=""
 RUN_SMOKE_TEST=false
+SMOKE_TEST_BASE_URL="${SMOKE_TEST_BASE_URL:-http://127.0.0.1}"
 SSH_ARGS=()
 
 usage() {
@@ -40,6 +41,7 @@ Options:
   --skip-wait                Do not wait for registry images before deployment.
   --skip-deploy              Create/push the tag and wait for images, but do not SSH deploy.
   --run-smoke-test           Run post-deploy smoke tests after Compose route checks.
+  --smoke-test-base-url <url> Base URL used by route checks and smoke tests. Defaults to http://127.0.0.1.
   --ssh-option <option>      Extra ssh -o option passed through to deploy-compose.sh.
   -h, --help                 Show this help.
 
@@ -111,6 +113,10 @@ while [[ $# -gt 0 ]]; do
     --run-smoke-test)
       RUN_SMOKE_TEST=true
       shift
+      ;;
+    --smoke-test-base-url)
+      SMOKE_TEST_BASE_URL="${2:?missing smoke test base url}"
+      shift 2
       ;;
     --ssh-option)
       SSH_ARGS+=(--ssh-option "${2:?missing ssh option}")
@@ -187,6 +193,7 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
   if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
     deploy_args+=(--run-smoke-test)
   fi
+  deploy_args+=(--smoke-test-base-url "$SMOKE_TEST_BASE_URL")
 
   "${SCRIPT_DIR}/deploy-compose.sh" "${deploy_args[@]}" "${SSH_ARGS[@]}"
 fi
