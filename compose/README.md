@@ -74,4 +74,7 @@ Post-deploy validation for an already running stack:
 python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
 ```
 
+`--base-url` can also point at the deployed server address or public domain, for
+example `https://lens.example.com`.
+
 When adding another Compose stack, keep it in this directory and document the target environment here.

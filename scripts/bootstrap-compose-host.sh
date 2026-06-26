@@ -16,6 +16,7 @@ FORCE_ENV=false
 SKIP_DEPLOY=false
 ALLOW_DIRTY=false
 RUN_SMOKE_TEST=false
+SMOKE_TEST_BASE_URL="${SMOKE_TEST_BASE_URL:-http://127.0.0.1}"
 SSH_BIN="${SSH_BIN:-ssh}"
 SSH_OPTS=()
 
@@ -36,6 +37,7 @@ Options:
   --skip-deploy              Bootstrap repo and .env only; do not run Compose.
   --allow-dirty              Allow checkout even when the remote deployment repo has local changes.
   --run-smoke-test           Run post-deploy smoke tests after Compose route checks.
+  --smoke-test-base-url <url> Base URL used by route checks and smoke tests. Defaults to http://127.0.0.1.
   --ssh-option <option>      Extra ssh -o option. Repeat for multiple options.
   -h, --help                 Show this help.
 
@@ -104,6 +106,10 @@ while [[ $# -gt 0 ]]; do
     --run-smoke-test)
       RUN_SMOKE_TEST=true
       shift
+      ;;
+    --smoke-test-base-url)
+      SMOKE_TEST_BASE_URL="${2:?missing smoke test base url}"
+      shift 2
       ;;
     --ssh-option)
       SSH_OPTS+=(-o "${2:?missing ssh option}")
@@ -308,6 +314,7 @@ fi
 if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
   deploy_args+=(--run-smoke-test)
 fi
+deploy_args+=(--smoke-test-base-url "$SMOKE_TEST_BASE_URL")
 for ((i = 0; i < ${#SSH_OPTS[@]}; i += 2)); do
   deploy_args+=(--ssh-option "${SSH_OPTS[$((i + 1))]}")
 done

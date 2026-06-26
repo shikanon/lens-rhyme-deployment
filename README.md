@@ -97,18 +97,25 @@ Run it directly on a deployed server:
 python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
 ```
 
+Use `--base-url` for the actual target being tested. It can be the local
+Compose route, a server IP, or a public domain, for example
+`https://lens.example.com`.
+
 Or run it automatically after deployment:
 
 ```bash
 scripts/deploy-compose.sh \
   --tag deploy-20260622120000-7cf974f \
-  --run-smoke-test
+  --run-smoke-test \
+  --smoke-test-base-url https://lens.example.com
 ```
 
 The same flag is also available on `scripts/bootstrap-compose-host.sh` and
-`scripts/release-main-to-compose.sh`. The smoke test performs real model
-generation unless the deployed backend is configured for generation mock mode,
-so run it in staging or controlled production validation windows. Use
+`scripts/release-main-to-compose.sh`. If `--smoke-test-base-url` is omitted,
+route checks and smoke tests default to `http://127.0.0.1`. The smoke test
+performs real model generation unless the deployed backend is configured for
+generation mock mode, so run it in staging or controlled production validation
+windows. Use
 `--skip-studio`, `--skip-workbench`, or `SMOKE_TEST_*` environment overrides for
 partial checks and future extensions. Automatic post-deploy validation requires
 `python3` on the remote host; the deploy script checks this before running the
