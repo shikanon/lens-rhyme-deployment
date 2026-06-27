@@ -134,10 +134,15 @@ the bootstrap and internal-service secrets:
 ```bash
 SECRET_KEY=random-backend-jwt-secret
 ADMIN_DEFAULT_PASSWORD=random-initial-admin-password
-OPENVIKING_CLIENT_API_KEY=random-openviking-client-token
+OPENVIKING_CLIENT_API_KEY=random-openviking-user-or-admin-token
 OPENVIKING_ROOT_API_KEY=random-openviking-root-token
 CODEX_RUNNER_MANAGER_TOKEN=random-codex-runner-token
 ```
+
+`OPENVIKING_CLIENT_API_KEY` is used by the backend for tenant-scoped data APIs
+and must be a non-root user/admin key. Do not reuse `OPENVIKING_ROOT_API_KEY` as
+the backend client key; OpenViking rejects root keys for tenant-scoped data APIs
+in `api_key` mode.
 
 Optional bootstrap values:
 
