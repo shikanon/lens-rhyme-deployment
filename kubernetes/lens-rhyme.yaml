@@ -13,8 +13,8 @@ stringData:
   SECRET_KEY: replace-with-a-random-secret
   ADMIN_DEFAULT_PASSWORD: replace-with-an-initial-admin-password
   TEST_USER_PASSWORD: ""
-  OPENVIKING_CLIENT_API_KEY: lens-rhyme-openviking-local-root-key
-  OPENVIKING_ROOT_API_KEY: lens-rhyme-openviking-local-root-key
+  OPENVIKING_CLIENT_API_KEY: replace-with-openviking-user-or-admin-key
+  OPENVIKING_ROOT_API_KEY: replace-with-openviking-root-key
   OPENVIKING_API_KEY: ""
   POSTGRES_PASSWORD: lens_rhyme
   DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
@@ -28,6 +28,7 @@ data:
   BACKEND_DATA_PATH: /app/data
   BACKEND_OUTPUTS_PATH: /app/outputs
   OPENVIKING_URL: http://openviking:1933
+  OPENVIKING_AUTH_MODE: api_key
   OPENVIKING_ACCOUNT: lens-rhyme
   OPENVIKING_USER: backend
   OPENVIKING_API_BASE: https://ark.cn-beijing.volces.com/api/v3

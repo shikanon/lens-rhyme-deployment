@@ -237,6 +237,13 @@ video_key = getenv("VIDEO_API_KEY")
 embedding_key = getenv("EMBEDDING_API_KEY") or ark_key
 model3d_key = getenv("MODEL3D_API_KEY") or video_key or image_key or ark_key
 asr_key = getenv("VOLC_ASR_API_KEY") or ark_key
+openviking_client_api_key = getenv("OPENVIKING_CLIENT_API_KEY") or random_token(32)
+openviking_root_api_key = getenv("OPENVIKING_ROOT_API_KEY") or random_token(32)
+if openviking_client_api_key == openviking_root_api_key:
+    raise SystemExit(
+        "OPENVIKING_CLIENT_API_KEY must be a non-root user/admin key and cannot "
+        "match OPENVIKING_ROOT_API_KEY."
+    )
 
 platform_config_sources = {
     "ark_api_key": ark_key,
@@ -258,8 +265,8 @@ values = [
     ("SECRET_KEY", getenv("SECRET_KEY") or random_secret()),
     ("ADMIN_DEFAULT_USERNAME", getenv("ADMIN_DEFAULT_USERNAME", "admin")),
     ("ADMIN_DEFAULT_PASSWORD", getenv("ADMIN_DEFAULT_PASSWORD") or random_token(24)),
-    ("OPENVIKING_CLIENT_API_KEY", getenv("OPENVIKING_CLIENT_API_KEY") or random_token(32)),
-    ("OPENVIKING_ROOT_API_KEY", getenv("OPENVIKING_ROOT_API_KEY") or random_token(32)),
+    ("OPENVIKING_CLIENT_API_KEY", openviking_client_api_key),
+    ("OPENVIKING_ROOT_API_KEY", openviking_root_api_key),
     ("CODEX_RUNNER_MANAGER_TOKEN", getenv("CODEX_RUNNER_MANAGER_TOKEN") or random_token(32)),
     ("OPENAI_API_KEY", getenv("OPENAI_API_KEY")),
     ("OPENVIKING_API_KEY", getenv("OPENVIKING_API_KEY")),
