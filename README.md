@@ -77,49 +77,66 @@ permission-restricted `.env` with randomized internal secrets, optionally seeds
 Admin Platform Configuration defaults, then delegates the actual Compose rollout
 to `scripts/deploy-compose.sh`.
 
-## Post-Deploy Smoke Test
+## Prerelease Validation Gate
 
-Use `scripts/smoke-test-compose.py` to verify that a deployed stack can run the
-core product flows after Compose is up. The script reads Super Admin credentials
-from `.env` by default, creates a temporary test user, recharges 1000 credits,
-logs in as that user, then validates:
+Use `scripts/prerelease-validation-compose.sh` to run the prerelease gate that
+replaces the older post-deploy smoke test. The gate runs from an application repo
+checkout, uses a PostgreSQL advisory lock to avoid concurrent billing noise, and
+runs a pre-flight GC for stale `prerelease-admin-*` and `test-*` accounts.
 
-- Studio audio generation.
-- Studio image generation.
-- Studio video generation.
-- Studio 3D generation.
-- Workbench import of
-  `http://cdn.ai.tensorbytes.com/test/workbench/test.docx`.
+The validation requires the Admin frontend URL, main frontend URL, database URL,
+and one Volcengine/Ark API key. The same key is configured for LLM, image, and
+video model validation. The flow seeds a temporary Super Admin, creates a
+`test-*` enterprise through Admin UI, configures enterprise model keys, recharges
+10000 credits, verifies main-site billing, uploads and deletes fixed Resources
+fixtures, runs the three video Agents in parallel, imports the Workbench test
+script, waits for usage records or balance changes, writes a JSON report, and
+cleans temporary data.
 
 Run it directly on a deployed server:
 
 ```bash
-python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
+scripts/prerelease-validation-compose.sh \
+  --app-repo /root/lens-rhyme \
+  --admin-base-url https://admin.lens.example.com \
+  --frontend-base-url https://lens.example.com \
+  --database-url "$PRERELEASE_DATABASE_URL" \
+  --volcengine-api-key "$PRERELEASE_VOLCENGINE_API_KEY"
 ```
-
-Use `--base-url` for the actual target being tested. It can be the local
-Compose route, a server IP, or a public domain, for example
-`https://lens.example.com`.
 
 Or run it automatically after deployment:
 
 ```bash
 scripts/deploy-compose.sh \
   --tag deploy-20260622120000-7cf974f \
-  --run-smoke-test \
-  --smoke-test-base-url https://lens.example.com
+  --run-prerelease-validation \
+  --prerelease-admin-base-url https://admin.lens.example.com \
+  --prerelease-frontend-base-url https://lens.example.com \
+  --prerelease-database-url "$PRERELEASE_DATABASE_URL" \
+  --prerelease-volcengine-api-key "$PRERELEASE_VOLCENGINE_API_KEY"
 ```
 
-The same flag is also available on `scripts/bootstrap-compose-host.sh` and
-`scripts/release-main-to-compose.sh`. If `--smoke-test-base-url` is omitted,
-route checks and smoke tests default to `http://127.0.0.1`. The smoke test
-performs real model generation unless the deployed backend is configured for
-generation mock mode, so run it in staging or controlled production validation
-windows. Use
-`--skip-studio`, `--skip-workbench`, or `SMOKE_TEST_*` environment overrides for
-partial checks and future extensions. Automatic post-deploy validation requires
-`python3` on the remote host; the deploy script checks this before running the
-smoke test.
+The same prerelease flags are available on
+`scripts/bootstrap-compose-host.sh`, `scripts/release-main-to-compose.sh`, and
+`scripts/self-host-compose-cd.sh`. If `--prerelease-frontend-base-url` is
+omitted by deploy wrappers, it defaults to `--smoke-test-base-url` for route
+compatibility. Reports default to
+`frontend/test-results/prerelease-validation` under the application repo unless
+`--prerelease-report-dir` or `PRERELEASE_REPORT_DIR` is set.
+
+Install a separate GC job as a final cleanup safety net for CI timeouts, host
+reclaims, or killed processes:
+
+```bash
+scripts/prerelease-validation-gc.sh \
+  --app-repo /root/lens-rhyme \
+  --database-url "$PRERELEASE_DATABASE_URL" \
+  --max-age-hours 24
+```
+
+The legacy `scripts/smoke-test-compose.py` and `--run-smoke-test` flag are kept
+for one transition cycle as a rollback option. They should not be treated as the
+primary release confidence gate once prerelease validation is enabled.
 
 ## Minimal Environment
 

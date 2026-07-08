@@ -43,9 +43,24 @@ What it does on the target server:
 7. Runs Docker Compose and checks `http://127.0.0.1/` plus
    `http://127.0.0.1/docs/` by default.
 
-Add `--run-smoke-test` to run the product smoke test after route checks. Pass
-`--smoke-test-base-url <url>` when route checks and smoke tests should target a
-server IP or public domain instead of the default local Compose route.
+Add `--run-prerelease-validation` to run the prerelease gate after route checks.
+Pass the Admin URL, main frontend URL, database URL, and Volcengine/Ark API key
+through the matching `--prerelease-*` flags:
+
+```bash
+scripts/self-host-compose-cd.sh \
+  --local \
+  --app-dir /root/lens-rhyme-selfhost-source \
+  --run-prerelease-validation \
+  --prerelease-admin-base-url https://admin.lens.example.com \
+  --prerelease-frontend-base-url https://lens.example.com \
+  --prerelease-database-url "$PRERELEASE_DATABASE_URL" \
+  --prerelease-volcengine-api-key "$PRERELEASE_VOLCENGINE_API_KEY"
+```
+
+The legacy `--run-smoke-test` flag remains available for one transition cycle.
+Use prerelease validation as the primary gate when the environment can run real
+model, Resources, Agent, Workbench, and billing checks.
 
 ## Protect Existing Server Work
 

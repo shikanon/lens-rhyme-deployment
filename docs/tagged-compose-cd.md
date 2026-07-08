@@ -71,13 +71,24 @@ scripts/release-main-to-compose.sh \
 
 Prefer SSH keys for repeated deployments.
 
-Add `--run-smoke-test` when the deploy should immediately run the fixed product
-smoke test after the route checks. The smoke test creates a temporary user,
-recharges 1000 credits, exercises Studio audio/image/video/3D generation, and
-imports the Workbench test document from
-`http://cdn.ai.tensorbytes.com/test/workbench/test.docx`.
-Pass `--smoke-test-base-url <url>` when the validation should target a server
-IP or public domain instead of the default `http://127.0.0.1`.
+Add `--run-prerelease-validation` when the deploy should immediately run the
+release gate after route checks. Pass the Admin URL, main frontend URL, database
+URL, and Volcengine/Ark API key through the matching `--prerelease-*` flags:
+
+```bash
+scripts/release-main-to-compose.sh \
+  --app-repo /path/to/lens-rhyme \
+  --run-prerelease-validation \
+  --prerelease-admin-base-url https://admin.lens.example.com \
+  --prerelease-frontend-base-url https://lens.example.com \
+  --prerelease-database-url "$PRERELEASE_DATABASE_URL" \
+  --prerelease-volcengine-api-key "$PRERELEASE_VOLCENGINE_API_KEY"
+```
+
+The legacy `--run-smoke-test` flag is still available for one transition cycle,
+but the prerelease gate is the primary release confidence check because it
+covers Admin setup, Resources, Agents, Workbench import, billing settlement, and
+cleanup.
 
 If neither `--host` nor `DEPLOY_HOST` is set, the script prompts for a server
 host/IP. A bare IP or hostname is treated as `root@host`. If neither `SSHPASS`

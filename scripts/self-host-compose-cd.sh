@@ -22,6 +22,16 @@ NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org/}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple/}"
 RUN_SMOKE_TEST=false
 SMOKE_TEST_BASE_URL="${SMOKE_TEST_BASE_URL:-http://127.0.0.1}"
+RUN_PRERELEASE_VALIDATION=false
+PRERELEASE_APP_REPO="${PRERELEASE_APP_REPO:-}"
+PRERELEASE_ADMIN_BASE_URL="${PRERELEASE_ADMIN_BASE_URL:-}"
+PRERELEASE_FRONTEND_BASE_URL="${PRERELEASE_FRONTEND_BASE_URL:-}"
+PRERELEASE_API_BASE_URL="${PRERELEASE_API_BASE_URL:-}"
+PRERELEASE_DATABASE_URL="${PRERELEASE_DATABASE_URL:-${DATABASE_URL:-}}"
+PRERELEASE_VOLCENGINE_API_KEY="${PRERELEASE_VOLCENGINE_API_KEY:-${VOLCENGINE_API_KEY:-${ARK_API_KEY:-}}}"
+PRERELEASE_REPORT_DIR="${PRERELEASE_REPORT_DIR:-}"
+PRERELEASE_GC_MAX_AGE_HOURS="${PRERELEASE_GC_MAX_AGE_HOURS:-24}"
+PRERELEASE_LOCK_WAIT_SECONDS="${PRERELEASE_LOCK_WAIT_SECONDS:-0}"
 SKIP_ROUTE_CHECKS=false
 ALLOW_DIRTY_APP=false
 ALLOW_DIRTY_DEPLOY=false
@@ -54,6 +64,16 @@ Options:
   --allow-dirty-deploy           Allow switching a dirty remote deployment repo.
   --run-smoke-test               Run scripts/smoke-test-compose.py after route checks.
   --smoke-test-base-url <url>    Base URL used by route checks and smoke tests. Defaults to http://127.0.0.1.
+  --run-prerelease-validation    Run the prerelease validation gate after route checks.
+  --prerelease-app-repo <path>   App repo checkout used to run Playwright. Defaults to --app-dir.
+  --prerelease-admin-base-url <url> Admin frontend URL for prerelease validation.
+  --prerelease-frontend-base-url <url> Main frontend URL for prerelease validation.
+  --prerelease-api-base-url <url> Backend API base URL for prerelease validation.
+  --prerelease-database-url <url> Database URL for seed, lock, and GC.
+  --prerelease-volcengine-api-key <key> Volcengine/Ark API key for validation.
+  --prerelease-report-dir <path> Report output directory.
+  --prerelease-gc-max-age-hours <hours> Stale prerelease object cleanup threshold.
+  --prerelease-lock-wait-seconds <seconds> Advisory lock wait before failing.
   --skip-route-checks            Skip local HTTP route checks.
   --ssh-option <option>          Extra ssh -o option. Repeat for multiple options.
   -h, --help                     Show this help.
@@ -143,6 +163,46 @@ while [[ $# -gt 0 ]]; do
       SMOKE_TEST_BASE_URL="${2:?missing smoke test base url}"
       shift 2
       ;;
+    --run-prerelease-validation)
+      RUN_PRERELEASE_VALIDATION=true
+      shift
+      ;;
+    --prerelease-app-repo)
+      PRERELEASE_APP_REPO="${2:?missing prerelease app repo}"
+      shift 2
+      ;;
+    --prerelease-admin-base-url)
+      PRERELEASE_ADMIN_BASE_URL="${2:?missing prerelease admin base url}"
+      shift 2
+      ;;
+    --prerelease-frontend-base-url)
+      PRERELEASE_FRONTEND_BASE_URL="${2:?missing prerelease frontend base url}"
+      shift 2
+      ;;
+    --prerelease-api-base-url)
+      PRERELEASE_API_BASE_URL="${2:?missing prerelease api base url}"
+      shift 2
+      ;;
+    --prerelease-database-url)
+      PRERELEASE_DATABASE_URL="${2:?missing prerelease database url}"
+      shift 2
+      ;;
+    --prerelease-volcengine-api-key)
+      PRERELEASE_VOLCENGINE_API_KEY="${2:?missing prerelease Volcengine API key}"
+      shift 2
+      ;;
+    --prerelease-report-dir)
+      PRERELEASE_REPORT_DIR="${2:?missing prerelease report dir}"
+      shift 2
+      ;;
+    --prerelease-gc-max-age-hours)
+      PRERELEASE_GC_MAX_AGE_HOURS="${2:?missing prerelease GC max age hours}"
+      shift 2
+      ;;
+    --prerelease-lock-wait-seconds)
+      PRERELEASE_LOCK_WAIT_SECONDS="${2:?missing prerelease lock wait seconds}"
+      shift 2
+      ;;
     --skip-route-checks)
       SKIP_ROUTE_CHECKS=true
       shift
@@ -215,6 +275,32 @@ run_remote() {
     remote_args+=(--run-smoke-test)
   fi
   remote_args+=(--smoke-test-base-url "$SMOKE_TEST_BASE_URL")
+  if [[ "$RUN_PRERELEASE_VALIDATION" == "true" ]]; then
+    remote_args+=(--run-prerelease-validation)
+  fi
+  if [[ -n "$PRERELEASE_APP_REPO" ]]; then
+    remote_args+=(--prerelease-app-repo "$PRERELEASE_APP_REPO")
+  fi
+  if [[ -n "$PRERELEASE_ADMIN_BASE_URL" ]]; then
+    remote_args+=(--prerelease-admin-base-url "$PRERELEASE_ADMIN_BASE_URL")
+  fi
+  if [[ -n "$PRERELEASE_FRONTEND_BASE_URL" ]]; then
+    remote_args+=(--prerelease-frontend-base-url "$PRERELEASE_FRONTEND_BASE_URL")
+  fi
+  if [[ -n "$PRERELEASE_API_BASE_URL" ]]; then
+    remote_args+=(--prerelease-api-base-url "$PRERELEASE_API_BASE_URL")
+  fi
+  if [[ -n "$PRERELEASE_DATABASE_URL" ]]; then
+    remote_args+=(--prerelease-database-url "$PRERELEASE_DATABASE_URL")
+  fi
+  if [[ -n "$PRERELEASE_VOLCENGINE_API_KEY" ]]; then
+    remote_args+=(--prerelease-volcengine-api-key "$PRERELEASE_VOLCENGINE_API_KEY")
+  fi
+  if [[ -n "$PRERELEASE_REPORT_DIR" ]]; then
+    remote_args+=(--prerelease-report-dir "$PRERELEASE_REPORT_DIR")
+  fi
+  remote_args+=(--prerelease-gc-max-age-hours "$PRERELEASE_GC_MAX_AGE_HOURS")
+  remote_args+=(--prerelease-lock-wait-seconds "$PRERELEASE_LOCK_WAIT_SECONDS")
   if [[ "$SKIP_ROUTE_CHECKS" == "true" ]]; then
     remote_args+=(--skip-route-checks)
   fi
@@ -418,6 +504,32 @@ run_local() {
       exit 1
     fi
     python3 scripts/smoke-test-compose.py --base-url "$SMOKE_TEST_BASE_URL"
+  fi
+
+  if [[ "$RUN_PRERELEASE_VALIDATION" == "true" ]]; then
+    local prerelease_app_repo="${PRERELEASE_APP_REPO:-$APP_DIR}"
+    if [[ -z "$PRERELEASE_FRONTEND_BASE_URL" ]]; then
+      PRERELEASE_FRONTEND_BASE_URL="$SMOKE_TEST_BASE_URL"
+    fi
+
+    prerelease_args=(
+      --app-repo "$prerelease_app_repo"
+      --frontend-base-url "$PRERELEASE_FRONTEND_BASE_URL"
+      --admin-base-url "$PRERELEASE_ADMIN_BASE_URL"
+      --database-url "$PRERELEASE_DATABASE_URL"
+      --volcengine-api-key "$PRERELEASE_VOLCENGINE_API_KEY"
+      --gc-max-age-hours "$PRERELEASE_GC_MAX_AGE_HOURS"
+      --lock-wait-seconds "$PRERELEASE_LOCK_WAIT_SECONDS"
+    )
+    if [[ -n "$PRERELEASE_API_BASE_URL" ]]; then
+      prerelease_args+=(--api-base-url "$PRERELEASE_API_BASE_URL")
+    fi
+    if [[ -n "$PRERELEASE_REPORT_DIR" ]]; then
+      prerelease_args+=(--report-dir "$PRERELEASE_REPORT_DIR")
+    fi
+
+    echo "Running LensRhyme prerelease validation gate..."
+    scripts/prerelease-validation-compose.sh "${prerelease_args[@]}"
   fi
 
   echo "Self-host Compose CD completed for ${IMAGE_TAG}."
