@@ -77,4 +77,30 @@ python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
 `--base-url` can also point at the deployed server address or public domain, for
 example `https://lens.example.com`.
 
+Basic auth and permission validation that does not require model provider API
+keys:
+
+```bash
+python3 scripts/auth-smoke-compose.py --base-url http://127.0.0.1
+```
+
+The auth smoke test checks public routes, Super Admin login, main-site user
+login, wrong-password rejection, anonymous API rejection, user balance access,
+and that a main-site user cannot list Admin users. It creates the configured
+main-site test user through the Admin API when the user does not already exist.
+
+Workbench no-stuck validation for a local stack without model provider API keys:
+
+```bash
+python3 scripts/workbench-smoke-compose.py --base-url http://127.0.0.1 --allow-terminal-failure
+```
+
+The Workbench smoke test checks the `/workbench` route, logs in as the configured
+main-site user, creates a Workbench project, imports the test script document,
+and polls the import task until it reaches a terminal state. Run it without
+`--allow-terminal-failure` when real model provider/API keys are configured and
+the script import is expected to complete successfully. Add `--open-browser`
+locally if you want companion login and Workbench pages opened while the API
+checks produce the pass/fail result.
+
 When adding another Compose stack, keep it in this directory and document the target environment here.
