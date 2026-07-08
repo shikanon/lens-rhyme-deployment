@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
 import sys
 import time
 import urllib.error
@@ -77,6 +78,11 @@ def assert_workbench_route(body: str) -> None:
         raise SmokeFailure("workbench route returned a frontend error shell")
     if "lensrhyme" not in lowered:
         raise SmokeFailure("workbench route did not look like the LensRhyme app shell")
+
+
+def validate_credentials(args: argparse.Namespace) -> None:
+    if not args.user_password:
+        raise SmokeFailure("missing required credentials: set SMOKE_TEST_USER_PASSWORD or --user-password")
 
 
 class HttpClient:
@@ -316,14 +322,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Validate LensRhyme Workbench page availability and script import completion."
     )
-    parser.add_argument("--base-url", default="http://127.0.0.1:5410")
-    parser.add_argument("--api-prefix", default="/api/v1")
-    parser.add_argument("--user-username", default="test_user")
-    parser.add_argument("--user-password", default="password123")
-    parser.add_argument("--docx-url", default=DEFAULT_DOCX_URL)
-    parser.add_argument("--http-timeout", type=int, default=30)
-    parser.add_argument("--poll-timeout", type=int, default=180)
-    parser.add_argument("--poll-interval", type=int, default=5)
+    parser.add_argument("--base-url", default=os.getenv("SMOKE_TEST_BASE_URL", "http://127.0.0.1:5410"))
+    parser.add_argument("--api-prefix", default=os.getenv("SMOKE_TEST_API_PREFIX", "/api/v1"))
+    parser.add_argument("--user-username", default=os.getenv("SMOKE_TEST_USER_USERNAME", "test_user"))
+    parser.add_argument("--user-password", default=os.getenv("SMOKE_TEST_USER_PASSWORD", ""))
+    parser.add_argument("--docx-url", default=os.getenv("SMOKE_TEST_DOCX_URL", DEFAULT_DOCX_URL))
+    parser.add_argument("--http-timeout", type=int, default=int(os.getenv("SMOKE_TEST_HTTP_TIMEOUT", "30")))
+    parser.add_argument("--poll-timeout", type=int, default=int(os.getenv("SMOKE_TEST_POLL_TIMEOUT", "180")))
+    parser.add_argument("--poll-interval", type=int, default=int(os.getenv("SMOKE_TEST_POLL_INTERVAL", "5")))
     parser.add_argument(
         "--open-browser",
         action="store_true",
@@ -349,6 +355,7 @@ def main() -> int:
     args = build_parser().parse_args()
     args.base_url = args.base_url.rstrip("/")
     try:
+        validate_credentials(args)
         WorkbenchSmokeRunner(args).run()
     except KeyboardInterrupt:
         print("Workbench smoke test interrupted.", file=sys.stderr)

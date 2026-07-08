@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -218,19 +219,29 @@ def require_field(data: Any, field: str, context: str) -> Any:
     raise SmokeFailure(f"{context} missing '{field}': {shorten(data)}")
 
 
+def validate_credentials(args: argparse.Namespace) -> None:
+    missing = []
+    if not args.admin_password:
+        missing.append("SMOKE_TEST_ADMIN_PASSWORD or --admin-password")
+    if not args.user_password:
+        missing.append("SMOKE_TEST_USER_PASSWORD or --user-password")
+    if missing:
+        raise SmokeFailure(f"missing required credentials: set {', '.join(missing)}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Validate basic LensRhyme routes, login, and auth boundaries without model API keys."
     )
-    parser.add_argument("--base-url", default="http://127.0.0.1:5410")
-    parser.add_argument("--api-prefix", default="/api/v1")
-    parser.add_argument("--admin-username", default="admin")
-    parser.add_argument("--admin-password", default="admin123")
-    parser.add_argument("--user-username", default="test_user")
-    parser.add_argument("--user-password", default="password123")
-    parser.add_argument("--user-email", default="test_user@local.lens-rhyme.test")
-    parser.add_argument("--enterprise-name", default="Local Test Enterprise")
-    parser.add_argument("--http-timeout", type=int, default=30)
+    parser.add_argument("--base-url", default=os.getenv("SMOKE_TEST_BASE_URL", "http://127.0.0.1:5410"))
+    parser.add_argument("--api-prefix", default=os.getenv("SMOKE_TEST_API_PREFIX", "/api/v1"))
+    parser.add_argument("--admin-username", default=os.getenv("SMOKE_TEST_ADMIN_USERNAME", "admin"))
+    parser.add_argument("--admin-password", default=os.getenv("SMOKE_TEST_ADMIN_PASSWORD", ""))
+    parser.add_argument("--user-username", default=os.getenv("SMOKE_TEST_USER_USERNAME", "test_user"))
+    parser.add_argument("--user-password", default=os.getenv("SMOKE_TEST_USER_PASSWORD", ""))
+    parser.add_argument("--user-email", default=os.getenv("SMOKE_TEST_USER_EMAIL", "test_user@local.lens-rhyme.test"))
+    parser.add_argument("--enterprise-name", default=os.getenv("SMOKE_TEST_ENTERPRISE_NAME", "Local Test Enterprise"))
+    parser.add_argument("--http-timeout", type=int, default=int(os.getenv("SMOKE_TEST_HTTP_TIMEOUT", "30")))
     return parser
 
 
@@ -243,6 +254,7 @@ def main() -> int:
     args = build_parser().parse_args()
     args.base_url = args.base_url.rstrip("/")
     try:
+        validate_credentials(args)
         AuthSmokeRunner(args).run()
     except KeyboardInterrupt:
         print("Auth smoke test interrupted.", file=sys.stderr)

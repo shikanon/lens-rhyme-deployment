@@ -81,6 +81,8 @@ Basic auth and permission validation that does not require model provider API
 keys:
 
 ```bash
+export SMOKE_TEST_ADMIN_PASSWORD='<admin-password>'
+export SMOKE_TEST_USER_PASSWORD='<main-site-user-password>'
 python3 scripts/auth-smoke-compose.py --base-url http://127.0.0.1
 ```
 
@@ -88,10 +90,13 @@ The auth smoke test checks public routes, Super Admin login, main-site user
 login, wrong-password rejection, anonymous API rejection, user balance access,
 and that a main-site user cannot list Admin users. It creates the configured
 main-site test user through the Admin API when the user does not already exist.
+Passwords are read from environment variables or explicit CLI arguments; do not
+commit real credentials to the repository.
 
 Workbench no-stuck validation for a local stack without model provider API keys:
 
 ```bash
+export SMOKE_TEST_USER_PASSWORD='<main-site-user-password>'
 python3 scripts/workbench-smoke-compose.py --base-url http://127.0.0.1 --allow-terminal-failure
 ```
 
