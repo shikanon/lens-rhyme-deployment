@@ -10,3 +10,6 @@
 # Python
 __pycache__/
 *.pyc
+
+# Local smoke-test reports and screenshots
+reports/
