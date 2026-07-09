@@ -77,4 +77,64 @@ python3 scripts/smoke-test-compose.py --base-url http://127.0.0.1
 `--base-url` can also point at the deployed server address or public domain, for
 example `https://lens.example.com`.
 
+Basic auth and permission validation that does not require model provider API
+keys:
+
+```bash
+export SMOKE_TEST_ADMIN_PASSWORD='<admin-password>'
+export SMOKE_TEST_USER_PASSWORD='<main-site-user-password>'
+python3 scripts/auth-smoke-compose.py --base-url http://127.0.0.1
+```
+
+The auth smoke test checks public routes, Super Admin login, main-site user
+login, wrong-password rejection, anonymous API rejection, user balance access,
+and that a main-site user cannot list Admin users. It creates the configured
+main-site test user through the Admin API when the user does not already exist.
+Passwords are read from environment variables or explicit CLI arguments; do not
+commit real credentials to the repository.
+
+Workbench no-stuck validation for a local stack without model provider API keys:
+
+```bash
+export SMOKE_TEST_USER_PASSWORD='<main-site-user-password>'
+python3 scripts/workbench-smoke-compose.py --base-url http://127.0.0.1 --allow-terminal-failure
+```
+
+The Workbench smoke test checks the `/workbench` route, logs in as the configured
+main-site user, creates a Workbench project, imports the test script document,
+and polls the import task until it reaches a terminal state. Run it without
+`--allow-terminal-failure` when real model provider/API keys are configured and
+the script import is expected to complete successfully. Add `--open-browser`
+locally if you want companion login and Workbench pages opened while the API
+checks produce the pass/fail result.
+
+Feature regression report for LensRhyme routes, Agent upload previews, Studio
+video navigation, and optional Chat interaction:
+
+```bash
+export SMOKE_TEST_USER_PASSWORD='<main-site-user-password>'
+export LENS_SMOKE_VIDEO_PATH='/tmp/public-sample.mp4'
+npm install --prefix /tmp/lens-smoke-tools playwright-core
+NODE_PATH=/tmp/lens-smoke-tools/node_modules \
+  node scripts/lens-ui-smoke-playwright.js \
+  --base-url http://127.0.0.1:5410 \
+  --chrome-path '/path/to/chrome' \
+  --video-path "$LENS_SMOKE_VIDEO_PATH" \
+  --check-chat \
+  --output-json /tmp/lens-browser-findings.json
+
+python3 scripts/lens-feature-report.py \
+  --base-url http://127.0.0.1:5410 \
+  --routes /chat,/agents,/studio,/workbench \
+  --runs 2 \
+  --browser-findings-json /tmp/lens-browser-findings.json \
+  --report-path /tmp/lens-feature-report.md
+```
+
+The UI smoke script writes only safe findings: status, duration, video element
+counts, console-error counts, and navigation markers. It does not write
+passwords, API keys, bearer tokens, or signed media URLs. `--check-chat` sends
+one short prompt and should be used only when model-provider quota consumption is
+acceptable. Omit it for a navigation/upload-preview-only run.
+
 When adding another Compose stack, keep it in this directory and document the target environment here.
