@@ -137,4 +137,41 @@ passwords, API keys, bearer tokens, or signed media URLs. `--check-chat` sends
 one short prompt and should be used only when model-provider quota consumption is
 acceptable. Omit it for a navigation/upload-preview-only run.
 
+Generation smoke tests for the Studio and Agent workflows that actually call
+model-backed generation or analysis features:
+
+```bash
+export SMOKE_TEST_USER_PASSWORD='<main-site-user-password>'
+export LENS_SMOKE_VIDEO_PATH='/tmp/public-sample.mp4'
+npm install --prefix /tmp/lens-smoke-tools playwright-core
+
+NODE_PATH=/tmp/lens-smoke-tools/node_modules \
+  node scripts/lens-generation-smoke-playwright.js \
+  --quick \
+  --base-url http://127.0.0.1:5410 \
+  --chrome-path '/path/to/chrome' \
+  --video-path "$LENS_SMOKE_VIDEO_PATH" \
+  --output-dir /tmp/lens-generation-smoke
+```
+
+Quick mode checks route availability, Studio text-to-audio, Studio
+text-to-image, Studio speech-recognition upload, video prompt reverse,
+prompt-reverse-to-Studio navigation, AI Film URL input, and a lightweight Chat
+round trip. Full mode adds long-running video-generation paths:
+
+```bash
+NODE_PATH=/tmp/lens-smoke-tools/node_modules \
+  node scripts/lens-generation-smoke-playwright.js \
+  --full \
+  --base-url http://127.0.0.1:5410 \
+  --chrome-path '/path/to/chrome' \
+  --video-path "$LENS_SMOKE_VIDEO_PATH" \
+  --output-dir /tmp/lens-generation-smoke-full
+```
+
+The generation script writes `report.md`, `report.json`, and full-page
+Playwright screenshots under the output directory. Keep output directories
+outside the repository, or under the ignored local `reports/` directory, because
+screenshots may show temporary task results or signed media URLs.
+
 When adding another Compose stack, keep it in this directory and document the target environment here.
