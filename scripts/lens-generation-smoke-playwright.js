@@ -53,8 +53,8 @@ const CHINESE_SLUGS = [
 function parseArgs(argv) {
   const args = {
     baseUrl: process.env.LENS_SMOKE_BASE_URL || process.env.SMOKE_TEST_BASE_URL || "http://127.0.0.1:5410",
-    username: process.env.SMOKE_TEST_USER_USERNAME || "test_user",
-    password: process.env.SMOKE_TEST_USER_PASSWORD || "",
+    username: process.env.SMOKE_TEST_USER_USERNAME || process.env.TEST_USER_USERNAME || "test_user",
+    password: process.env.SMOKE_TEST_USER_PASSWORD || process.env.TEST_USER_PASSWORD || "",
     chromePath: process.env.LENS_SMOKE_CHROME_PATH || "",
     videoPath: process.env.LENS_SMOKE_VIDEO_PATH || "",
     audioPath: process.env.LENS_SMOKE_AUDIO_PATH || "",
@@ -175,6 +175,14 @@ function validateTimedMedia(media, options = {}) {
   return { ok: true, reason: "media loaded" };
 }
 
+function findNewUsableMedia(beforeMedia, afterMedia, validator, options = {}) {
+  const existingSources = new Set((beforeMedia || []).map((media) => String(media.src || "")).filter(Boolean));
+  return (afterMedia || []).find((media) => {
+    const source = String(media.src || "");
+    return source && !existingSources.has(source) && validator(media, options).ok;
+  }) || null;
+}
+
 function validateTextResult(text, options = {}) {
   const minLength = options.minLength || 50;
   const normalized = String(text || "").trim();
@@ -195,8 +203,32 @@ function containsExplicitError(text) {
   return /Tool Error|insufficient_quota|Error code\s*:|Bad Gateway|Workflow:\s*failed|Generation Failed|生成失败|任务失败|Timeout while/i.test(String(text || ""));
 }
 
+function hasNewExplicitError(currentText, previousText) {
+  const current = String(currentText || "");
+  if (!containsExplicitError(current)) return false;
+  const previous = String(previousText || "");
+  if (!previous) return true;
+  if (current.startsWith(previous)) return containsExplicitError(current.slice(previous.length));
+  if (current.includes(previous)) return containsExplicitError(current.replace(previous, ""));
+  return false;
+}
+
+function hasNewMeaningfulTextResult(currentText, previousText, options = {}) {
+  const current = String(currentText || "").trim();
+  const previous = String(previousText || "").trim();
+  if (!current || current === previous || containsExplicitError(current) || containsActiveTaskMarker(current)) return false;
+  const delta = current.includes(previous) ? current.replace(previous, "").trim() : current;
+  return validateTextResult(delta, options).ok;
+}
+
 function containsActiveTaskMarker(text) {
-  return /Task is running|Waiting for rendering|Thinking\.\.\.|Reversing|Creating|Submitting|提交中|生成中|运行中/i.test(String(text || ""));
+  return /Task is running|Waiting for rendering|Waiting for generated result|Workflow:\s*generating|Thinking\.\.\.|Reversing|Prompting|Creating|Submitting|Uploading(?: audio)?|上传中|识别中|提交中|生成中|运行中/i.test(String(text || ""));
+}
+
+function hasSpeechRecognitionResult(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized || containsExplicitError(normalized) || containsActiveTaskMarker(normalized)) return false;
+  return /(?:recognition\s+result|transcript(?:ion)?|识别结果|识别文本|转写结果)\s*[:：-]?\s*[\s\S]{12,}/i.test(normalized);
 }
 
 function redactSensitiveText(text) {
@@ -271,6 +303,10 @@ function renderMarkdownReport(results, options = {}) {
 
 function joinUrl(baseUrl, route) {
   return `${baseUrl.replace(/\/$/, "")}/${route.replace(/^\//, "")}`;
+}
+
+function isLoginUrl(url) {
+  return new URL(String(url)).pathname === "/login";
 }
 
 function ensureOutputDirs(outputDir) {
@@ -382,10 +418,11 @@ async function waitForOutcome(page, options) {
   const pollIntervalMs = options.pollIntervalMs || 10000;
   const started = Date.now();
   let lastSnapshot = await safeSnapshot(page);
+  const baselineText = options.baselineText == null ? lastSnapshot.text : options.baselineText;
   while (Date.now() - started < timeoutMs) {
     lastSnapshot = await safeSnapshot(page);
     const text = lastSnapshot.text;
-    if (containsExplicitError(text)) {
+    if (hasNewExplicitError(text, baselineText)) {
       return { state: "fail", snapshot: lastSnapshot, reason: "page contains an explicit error marker" };
     }
     const custom = options.check ? options.check(lastSnapshot) : null;
@@ -401,10 +438,13 @@ async function login(page, args) {
   await page.getByPlaceholder("Username", { exact: true }).fill(args.username);
   await page.getByPlaceholder("Password", { exact: true }).fill(args.password);
   await Promise.all([
-    page.waitForURL((url) => !String(url).includes("/login"), { timeout: 30000 }).catch(() => {}),
+    page.waitForURL((url) => !isLoginUrl(url), { timeout: 30000 }).catch(() => {}),
     page.getByRole("button", { name: "Log In", exact: true }).click({ timeout: 10000 }),
   ]);
   await page.waitForTimeout(3000);
+  if (isLoginUrl(page.url())) {
+    throw new Error("login did not complete; verify the main-site test account configuration");
+  }
 }
 
 async function runPreflight(page, args, ctx) {
@@ -442,13 +482,15 @@ async function runStudioAudio(page, args, ctx) {
   await clickButtonByNames(page, ["Text to Speech"]);
   await fillFirstTextArea(page, "LensRhyme 自动化测试：请生成一段很短的中文语音。");
   screenshots.push(await screenshot(page, ctx, "studio-audio", "input"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["Generate Audio", "生成音频", "Start Generation"]);
   screenshots.push(await screenshot(page, ctx, "studio-audio", "submitted"));
   const outcome = await waitForOutcome(page, {
     timeoutMs: args.quickTimeoutMs,
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
-      const usable = snap.audios.find((audio) => validateTimedMedia(audio).ok);
+      const usable = findNewUsableMedia(before.audios, snap.audios, validateTimedMedia);
       if (usable) return { state: "pass", reason: "audio element is playable", media: usable };
       return null;
     },
@@ -470,13 +512,15 @@ async function runStudioImage(page, args, ctx) {
   await openStudioTab(page, args, "Image");
   await fillFirstTextArea(page, "A clean product photo of a small white cup on a bright desk, high quality");
   screenshots.push(await screenshot(page, ctx, "studio-image", "input"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["Generate Image", "生成图片", "Start Generation", "Generate"]);
   screenshots.push(await screenshot(page, ctx, "studio-image", "submitted"));
   const outcome = await waitForOutcome(page, {
     timeoutMs: args.quickTimeoutMs,
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
-      const usable = snap.images.find((image) => validateImageAsset(image, { minBytes: 0 }).ok);
+      const usable = findNewUsableMedia(before.images, snap.images, validateImageAsset, { minBytes: 0 });
       if (usable) return { state: "pass", reason: "image loaded with natural size", image: usable };
       return null;
     },
@@ -498,13 +542,15 @@ async function runStudioVideo(page, args, ctx) {
   await openStudioTab(page, args, "Video");
   await fillFirstTextArea(page, "A calm 3 second cinematic shot of a white cup on a desk, soft daylight");
   screenshots.push(await screenshot(page, ctx, "studio-video", "input"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["Generate Video", "生成视频", "Start Generation"]);
   screenshots.push(await screenshot(page, ctx, "studio-video", "submitted"));
   const outcome = await waitForOutcome(page, {
     timeoutMs: args.longTimeoutMs,
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
-      const usable = snap.videos.find((video) => validateTimedMedia(video).ok);
+      const usable = findNewUsableMedia(before.videos, snap.videos, validateTimedMedia);
       if (usable) return { state: "pass", reason: "video element is playable", video: usable };
       return null;
     },
@@ -532,13 +578,14 @@ async function runSpeechUpload(page, args, ctx) {
   }
   await input.first().setInputFiles(uploadPath);
   screenshots.push(await screenshot(page, ctx, "studio-speech-upload", "uploaded"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["Start Recognition", "Recognize", "Generate", "开始识别", "录音识别"]);
   const outcome = await waitForOutcome(page, {
     timeoutMs: args.quickTimeoutMs,
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
-      const valid = validateTextResult(snap.text, { minLength: 80 });
-      if (valid.ok && /识别|transcript|recognition|文本|result/i.test(snap.text)) return { state: "pass", reason: "recognition text appears" };
+      if (hasSpeechRecognitionResult(snap.text)) return { state: "pass", reason: "recognition transcript appears" };
       return null;
     },
   });
@@ -558,15 +605,17 @@ async function runPromptReverse(page, args, ctx) {
   const input = page.locator("input[type=file]");
   if ((await input.count()) > 0) await input.first().setInputFiles(args.videoPath);
   screenshots.push(await screenshot(page, ctx, "prompt-reverse", "uploaded"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["Reverse prompt", "反推提示词"]);
   const outcome = await waitForOutcome(page, {
     timeoutMs: args.quickTimeoutMs,
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
       if (/Use for video generation|用于视频生成|Structured breakdown|Observed summary/i.test(snap.text)) {
-        if (containsActiveTaskMarker(snap.text)) return null;
-        const valid = validateTextResult(snap.text, { minLength: 120 });
-        if (valid.ok) return { state: "pass", reason: "reverse prompt text appears" };
+        if (hasNewMeaningfulTextResult(snap.text, before.text, { minLength: 120 })) {
+          return { state: "pass", reason: "new reverse prompt text appears" };
+        }
       }
       return null;
     },
@@ -629,10 +678,12 @@ async function runFilmUrl(page, args, ctx) {
   const textInput = page.locator("input:not([type=file]), textarea");
   if ((await textInput.count()) > 0) await textInput.first().fill(testUrl);
   screenshots.push(await screenshot(page, ctx, "film-url", "input"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["开始拉片", "Start", "Analyze"]);
   const outcome = await waitForOutcome(page, {
     timeoutMs: Math.min(args.quickTimeoutMs, 60000),
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
       if (/进行中\s*1|Running/i.test(snap.text)) return { state: "warn", reason: "film URL task appears accepted but not completed in quick check" };
       return null;
@@ -655,6 +706,7 @@ async function runChat(page, args, ctx) {
   const outcome = await waitForOutcome(page, {
     timeoutMs: Math.min(args.quickTimeoutMs, 30000),
     pollIntervalMs: 5000,
+    baselineText: before.text,
     check: (snap) => {
       const grew = snap.text.length > before.text.length + 30;
       const thinking = containsActiveTaskMarker(snap.text);
@@ -676,17 +728,23 @@ async function runGenericLongAgent(page, args, ctx, id, name, route, buttonNames
   await page.waitForTimeout(2000);
   const input = page.locator("input[type=file]");
   if ((await input.count()) > 0) await input.first().setInputFiles(args.videoPath);
+  await page.waitForTimeout(2000);
   await fillFirstTextArea(page, "LensRhyme generation smoke test with a short public sample video.");
   screenshots.push(await screenshot(page, ctx, id, "input"));
+  const before = await safeSnapshot(page);
   await clickButtonByNames(page, buttonNames);
   screenshots.push(await screenshot(page, ctx, id, "submitted"));
   const outcome = await waitForOutcome(page, {
     timeoutMs,
     pollIntervalMs: args.pollIntervalMs,
+    baselineText: before.text,
     check: (snap) => {
-      const video = snap.videos.find((item) => validateTimedMedia(item).ok);
+      if (containsActiveTaskMarker(snap.text)) return null;
+      const video = findNewUsableMedia(before.videos, snap.videos, validateTimedMedia);
       if (video) return { state: "pass", reason: "generated or result video is playable" };
-      if (/Generated Prompt|分镜|shot|分析结果/i.test(snap.text)) return { state: "pass", reason: "text analysis/storyboard result appears" };
+      if (id === "agents.film.upload_analysis" && hasNewMeaningfulTextResult(snap.text, before.text, { minLength: 100 })) {
+        return { state: "pass", reason: "new text analysis result appears" };
+      }
       return null;
     },
   });
@@ -786,13 +844,18 @@ if (require.main === module) {
 module.exports = {
   parseArgs,
   buildScenarioPlan,
+  isLoginUrl,
   screenshotName,
   validateImageAsset,
   validateTimedMedia,
+  findNewUsableMedia,
   validateTextResult,
   classifyTaskState,
   containsExplicitError,
+  hasNewExplicitError,
+  hasNewMeaningfulTextResult,
   containsActiveTaskMarker,
+  hasSpeechRecognitionResult,
   renderMarkdownReport,
   redactSensitiveText,
   redactValue,

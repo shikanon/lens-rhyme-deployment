@@ -57,6 +57,46 @@ function testMediaValidationRejectsFakeSuccess() {
   assert.match(squashed.reason, /aspect ratio/);
 }
 
+function testParseArgsAcceptsDeploymentTestCredentialNames() {
+  const previousUsername = process.env.TEST_USER_USERNAME;
+  const previousPassword = process.env.TEST_USER_PASSWORD;
+  const previousSmokeUsername = process.env.SMOKE_TEST_USER_USERNAME;
+  const previousSmokePassword = process.env.SMOKE_TEST_USER_PASSWORD;
+  try {
+    delete process.env.SMOKE_TEST_USER_USERNAME;
+    delete process.env.SMOKE_TEST_USER_PASSWORD;
+    process.env.TEST_USER_USERNAME = "deployment_test_user";
+    process.env.TEST_USER_PASSWORD = "deployment_test_password";
+
+    const args = smoke.parseArgs([]);
+    assert.strictEqual(args.username, "deployment_test_user");
+    assert.strictEqual(args.password, "deployment_test_password");
+  } finally {
+    if (previousUsername === undefined) delete process.env.TEST_USER_USERNAME;
+    else process.env.TEST_USER_USERNAME = previousUsername;
+    if (previousPassword === undefined) delete process.env.TEST_USER_PASSWORD;
+    else process.env.TEST_USER_PASSWORD = previousPassword;
+    if (previousSmokeUsername === undefined) delete process.env.SMOKE_TEST_USER_USERNAME;
+    else process.env.SMOKE_TEST_USER_USERNAME = previousSmokeUsername;
+    if (previousSmokePassword === undefined) delete process.env.SMOKE_TEST_USER_PASSWORD;
+    else process.env.SMOKE_TEST_USER_PASSWORD = previousSmokePassword;
+  }
+}
+
+function testLoginUrlDetection() {
+  assert.strictEqual(smoke.isLoginUrl("http://127.0.0.1:5410/login"), true);
+  assert.strictEqual(smoke.isLoginUrl("http://127.0.0.1:5410/studio"), false);
+}
+
+function testNewMediaValidationRejectsHistoricalResult() {
+  const before = [{ src: "https://cdn.example/old.mp4", duration: 8, readyState: 4, error: null }];
+  const sameResult = [{ src: "https://cdn.example/old.mp4", duration: 8, readyState: 4, error: null }];
+  const newResult = [...sameResult, { src: "https://cdn.example/new.mp4", duration: 8, readyState: 4, error: null }];
+
+  assert.strictEqual(smoke.findNewUsableMedia(before, sameResult, smoke.validateTimedMedia), null);
+  assert.strictEqual(smoke.findNewUsableMedia(before, newResult, smoke.validateTimedMedia).src, "https://cdn.example/new.mp4");
+}
+
 function testTextValidationNeedsMeaningfulContent() {
   assert.strictEqual(smoke.validateTextResult("短", { minLength: 50 }).ok, false);
   assert.strictEqual(smoke.validateTextResult("这是一个足够长的反推提示词内容，用来证明不是空字符串，也不是错误提示。".repeat(2), { minLength: 50 }).ok, true);
@@ -76,10 +116,46 @@ function testExplicitErrorDetectionIgnoresHistoryLegend() {
   assert.strictEqual(smoke.containsExplicitError("Tool Error: OpenAI Responses API failed (429)"), true);
 }
 
+function testNewExplicitErrorIgnoresAnOldFailedGenerationCard() {
+  const beforeSubmit = "Recent Generations\nGeneration Failed\nUnknown error";
+  const runningCurrentTask = `${beforeSubmit}\nSubmitting task...`;
+  const newFailure = `${beforeSubmit}\nGeneration Failed\nError code: 400`;
+
+  assert.strictEqual(smoke.hasNewExplicitError(runningCurrentTask, beforeSubmit), false);
+  assert.strictEqual(smoke.hasNewExplicitError(newFailure, beforeSubmit), true);
+}
+
+function testNewMeaningfulTextRequiresNewContent() {
+  const staticStoryboard = "Storyboard Pipeline\nGenerated Prompt\nExisting prompt from an older task";
+  const completedAnalysis = `${staticStoryboard}\nAnalysis Result\n${"new analysis result ".repeat(12)}`;
+
+  assert.strictEqual(smoke.hasNewMeaningfulTextResult(staticStoryboard, staticStoryboard, { minLength: 50 }), false);
+  assert.strictEqual(smoke.hasNewMeaningfulTextResult(completedAnalysis, staticStoryboard, { minLength: 50 }), true);
+}
+
 function testActiveTaskDetectionCatchesRunningPlaceholders() {
   assert.strictEqual(smoke.containsActiveTaskMarker("Task is running. The reverse prompt will appear here when ready."), true);
   assert.strictEqual(smoke.containsActiveTaskMarker("Waiting for rendering..."), true);
+  assert.strictEqual(smoke.containsActiveTaskMarker("Uploading audio..."), true);
+  assert.strictEqual(smoke.containsActiveTaskMarker("Workflow: generating"), true);
+  assert.strictEqual(smoke.containsActiveTaskMarker("Waiting for generated result"), true);
   assert.strictEqual(smoke.containsActiveTaskMarker("Final completed result is ready"), false);
+}
+
+function testSpeechRecognitionDoesNotTreatStaticPageLabelsAsAResult() {
+  const staticStudioPage = [
+    "Speech Recognition",
+    "RECORDING SOURCE",
+    "Upload Recording",
+    "Start Recording",
+    "RECOGNITION LANGUAGE",
+    "Auto detect",
+    "Output Completion",
+  ].join("\n");
+  const completedRecognition = `${staticStudioPage}\nRecognition Result\nhello lens rhyme speech recognition test`;
+
+  assert.strictEqual(smoke.hasSpeechRecognitionResult(staticStudioPage), false);
+  assert.strictEqual(smoke.hasSpeechRecognitionResult(completedRecognition), true);
 }
 
 function testRenderReportIncludesScreenshotsAndSummary() {
@@ -103,14 +179,20 @@ function testRenderReportIncludesScreenshotsAndSummary() {
 function run() {
   const tests = [
     testParseArgsDefaultsToQuickMode,
+    testParseArgsAcceptsDeploymentTestCredentialNames,
+    testLoginUrlDetection,
     testFullModeIncludesLongGenerationScenarios,
     testSpecificScenarioFlagsOverrideMode,
     testScreenshotNameIsStableAndSafe,
     testMediaValidationRejectsFakeSuccess,
+    testNewMediaValidationRejectsHistoricalResult,
     testTextValidationNeedsMeaningfulContent,
     testClassifyTaskStateSeparatesFailureTimeoutAndRunning,
     testExplicitErrorDetectionIgnoresHistoryLegend,
+    testNewExplicitErrorIgnoresAnOldFailedGenerationCard,
+    testNewMeaningfulTextRequiresNewContent,
     testActiveTaskDetectionCatchesRunningPlaceholders,
+    testSpeechRecognitionDoesNotTreatStaticPageLabelsAsAResult,
     testRenderReportIncludesScreenshotsAndSummary,
   ];
 
