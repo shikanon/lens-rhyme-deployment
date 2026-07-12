@@ -1,3 +1,7 @@
+x-outbound-dns: &outbound-dns
+  - "${OUTBOUND_DNS_PRIMARY:-223.5.5.5}"
+  - "${OUTBOUND_DNS_SECONDARY:-119.29.29.29}"
+
 services:
   backend-init:
     image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-backend:${IMAGE_TAG:-latest}
@@ -32,6 +36,7 @@ services:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
       - codex_home:/codex-home
+    dns: *outbound-dns
     environment:
       SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
       DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
@@ -210,6 +215,7 @@ services:
 
   frontend:
     image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}/lens-rhyme-frontend:${IMAGE_TAG:-latest}
+    dns: *outbound-dns
     restart: always
 
   admin-frontend:
