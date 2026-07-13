@@ -133,6 +133,19 @@ function testNewMeaningfulTextRequiresNewContent() {
   assert.strictEqual(smoke.hasNewMeaningfulTextResult(completedAnalysis, staticStoryboard, { minLength: 50 }), true);
 }
 
+function testFilmUrlResultRequiresNewAnalysisContent() {
+  const initial = "AI Film Analysis\nPaste a video URL";
+  const running = `${initial}\nRunning`;
+  const completed = `${initial}\nAnalysis Report\n${"scene and shot analysis ".repeat(12)}`;
+
+  assert.strictEqual(smoke.hasFilmUrlAnalysisResult(running, initial), false);
+  assert.strictEqual(smoke.hasFilmUrlAnalysisResult(completed, initial), true);
+}
+
+function testFilmUrlWaitUsesConfiguredQuickTimeout() {
+  assert.strictEqual(smoke.filmUrlTimeoutMs({ quickTimeoutMs: 240000 }), 240000);
+}
+
 function testActiveTaskDetectionCatchesRunningPlaceholders() {
   assert.strictEqual(smoke.containsActiveTaskMarker("Task is running. The reverse prompt will appear here when ready."), true);
   assert.strictEqual(smoke.containsActiveTaskMarker("Waiting for rendering..."), true);
@@ -191,6 +204,8 @@ function run() {
     testExplicitErrorDetectionIgnoresHistoryLegend,
     testNewExplicitErrorIgnoresAnOldFailedGenerationCard,
     testNewMeaningfulTextRequiresNewContent,
+    testFilmUrlResultRequiresNewAnalysisContent,
+    testFilmUrlWaitUsesConfiguredQuickTimeout,
     testActiveTaskDetectionCatchesRunningPlaceholders,
     testSpeechRecognitionDoesNotTreatStaticPageLabelsAsAResult,
     testRenderReportIncludesScreenshotsAndSummary,

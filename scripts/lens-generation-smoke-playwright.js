@@ -221,6 +221,14 @@ function hasNewMeaningfulTextResult(currentText, previousText, options = {}) {
   return validateTextResult(delta, options).ok;
 }
 
+function hasFilmUrlAnalysisResult(currentText, previousText) {
+  return hasNewMeaningfulTextResult(currentText, previousText, { minLength: 100 });
+}
+
+function filmUrlTimeoutMs(args) {
+  return args.quickTimeoutMs;
+}
+
 function containsActiveTaskMarker(text) {
   return /Task is running|Waiting for rendering|Waiting for generated result|Workflow:\s*generating|Thinking\.\.\.|Reversing|Prompting|Creating|Submitting|Uploading(?: audio)?|上传中|识别中|提交中|生成中|运行中/i.test(String(text || ""));
 }
@@ -681,11 +689,13 @@ async function runFilmUrl(page, args, ctx) {
   const before = await safeSnapshot(page);
   await clickButtonByNames(page, ["开始拉片", "Start", "Analyze"]);
   const outcome = await waitForOutcome(page, {
-    timeoutMs: Math.min(args.quickTimeoutMs, 60000),
+    timeoutMs: filmUrlTimeoutMs(args),
     pollIntervalMs: args.pollIntervalMs,
     baselineText: before.text,
     check: (snap) => {
-      if (/进行中\s*1|Running/i.test(snap.text)) return { state: "warn", reason: "film URL task appears accepted but not completed in quick check" };
+      if (hasFilmUrlAnalysisResult(snap.text, before.text)) {
+        return { state: "pass", reason: "new film URL analysis result appears" };
+      }
       return null;
     },
   });
@@ -854,6 +864,8 @@ module.exports = {
   containsExplicitError,
   hasNewExplicitError,
   hasNewMeaningfulTextResult,
+  hasFilmUrlAnalysisResult,
+  filmUrlTimeoutMs,
   containsActiveTaskMarker,
   hasSpeechRecognitionResult,
   renderMarkdownReport,
