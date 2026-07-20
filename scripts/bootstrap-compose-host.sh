@@ -310,6 +310,8 @@ model3d_key = getenv("MODEL3D_API_KEY") or video_key or image_key or ark_key
 asr_key = getenv("VOLC_ASR_API_KEY") or ark_key
 openviking_client_api_key = getenv("OPENVIKING_CLIENT_API_KEY") or random_token(32)
 openviking_root_api_key = getenv("OPENVIKING_ROOT_API_KEY") or random_token(32)
+content_revalidation_secret = getenv("CONTENT_REVALIDATION_SECRET") or random_secret()
+indexnow_key = getenv("INDEXNOW_KEY") or secrets.token_hex(16)
 if openviking_client_api_key == openviking_root_api_key:
     raise SystemExit(
         "OPENVIKING_CLIENT_API_KEY must be a non-root user/admin key and cannot "
@@ -340,6 +342,20 @@ values = [
     ("OPENVIKING_CLIENT_API_KEY", openviking_client_api_key),
     ("OPENVIKING_ROOT_API_KEY", openviking_root_api_key),
     ("CODEX_RUNNER_MANAGER_TOKEN", getenv("CODEX_RUNNER_MANAGER_TOKEN") or random_token(32)),
+    ("CONTENT_SITE_URL", getenv("CONTENT_SITE_URL", "https://lensrhyme.com")),
+    ("CONTENT_PRODUCT_URL", getenv("CONTENT_PRODUCT_URL", "https://lensrhyme.com/login")),
+    ("CONTENT_SOURCE", getenv("CONTENT_SOURCE", "api")),
+    ("CONTENT_API_BASE_URL", getenv("CONTENT_API_BASE_URL", "http://backend:8000/api/v1/public/content")),
+    ("CONTENT_API_REQUIRED", getenv("CONTENT_API_REQUIRED", "1")),
+    ("CONTENT_API_REVALIDATE_SECONDS", getenv("CONTENT_API_REVALIDATE_SECONDS", "300")),
+    ("CONTENT_FRONTEND_REVALIDATION_URLS", getenv("CONTENT_FRONTEND_REVALIDATION_URLS", "http://content-frontend:3002/internal/content/revalidate")),
+    ("CONTENT_REVALIDATION_SECRET", content_revalidation_secret),
+    ("CONTENT_CDN_PURGE_ENDPOINT", getenv("CONTENT_CDN_PURGE_ENDPOINT")),
+    ("CONTENT_CDN_PURGE_TOKEN", getenv("CONTENT_CDN_PURGE_TOKEN")),
+    ("CONTENT_MEDIA_HOSTS", getenv("CONTENT_MEDIA_HOSTS", "lensrhyme.tos-cn-hongkong.volces.com,cdn.lens-rhyme.tensorbytes.com")),
+    ("INDEXNOW_ENABLED", getenv("INDEXNOW_ENABLED", "false")),
+    ("INDEXNOW_KEY", indexnow_key),
+    ("INDEXNOW_KEY_LOCATION", getenv("INDEXNOW_KEY_LOCATION", "https://lensrhyme.com/indexnow-key.txt")),
     ("OPENAI_API_KEY", getenv("OPENAI_API_KEY")),
     ("OPENVIKING_API_KEY", getenv("OPENVIKING_API_KEY")),
     ("ARK_API_KEY", ark_key),

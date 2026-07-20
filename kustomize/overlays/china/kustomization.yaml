@@ -11,3 +11,5 @@ images:
     newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend
   - name: shikanon096/lens-rhyme-docs-site
     newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site
+  - name: shikanon096/lens-rhyme-content-frontend
+    newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-content-frontend

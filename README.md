@@ -9,6 +9,7 @@ Docker Hub by default:
 - `frontend`: `shikanon096/lens-rhyme-frontend:<tag>`
 - `admin-frontend`: `shikanon096/lens-rhyme-admin-frontend:<tag>`
 - `docs-site`: `shikanon096/lens-rhyme-docs-site:<tag>`
+- `content-frontend`: `shikanon096/lens-rhyme-content-frontend:<tag>`
 
 ## Deployment Regions
 
@@ -25,7 +26,7 @@ scripts/deploy-compose.sh --tag <release-tag>
 scripts/deploy-compose.sh --region china --tag <release-tag>
 ```
 
-China mode does not silently copy images. Mirror all four images with the same
+China mode does not silently copy images. Mirror all five images with the same
 immutable tag before deploying. Explicit registry overrides always take
 precedence over the region default.
 
@@ -70,7 +71,7 @@ scripts/release-main-to-compose.sh \
 
 The script prompts for the target server host/IP and SSH password when they are
 not provided. It tags the latest application `origin/main`, waits for the
-selected registry to expose all four images with the same tag, then deploys
+selected registry to expose all five images with the same tag, then deploys
 that tag on the target server. See `docs/tagged-compose-cd.md` for the
 tag-triggered build contract, rollback flow, and multi-server options.
 

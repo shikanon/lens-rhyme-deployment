@@ -264,7 +264,7 @@ pull_service() {
 }
 
 echo "Pulling Compose images for tag ${IMAGE_TAG}..."
-for service in backend-init frontend admin-frontend docs-site; do
+for service in backend-init frontend admin-frontend docs-site content-frontend; do
   pull_service "$service"
 done
 

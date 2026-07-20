@@ -14,6 +14,7 @@ IMAGES=(
   lens-rhyme-frontend
   lens-rhyme-admin-frontend
   lens-rhyme-docs-site
+  lens-rhyme-content-frontend
 )
 
 usage() {
