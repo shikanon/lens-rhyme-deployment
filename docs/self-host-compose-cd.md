@@ -33,11 +33,12 @@ What it does on the target server:
 1. Clones or updates the deployment repo.
 2. Clones or updates a clean app repo under `/root/lens-rhyme-selfhost-source`.
 3. Checks out the requested app ref.
-4. Builds four local images:
+4. Builds five local images:
    - `lens-rhyme-selfhost/lens-rhyme-backend:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-frontend:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-admin-frontend:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-docs-site:<tag>`
+   - `lens-rhyme-selfhost/lens-rhyme-content-frontend:<tag>`
 5. Writes `.release.env` with the local image namespace and tag.
 6. Pulls only sidecar images such as Postgres, Nginx, and OpenViking.
 7. Runs Docker Compose and checks `http://127.0.0.1/` plus

@@ -468,6 +468,7 @@ run_local() {
   build_image lens-rhyme-frontend frontend --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
   build_image lens-rhyme-admin-frontend admin-frontend --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
   build_image lens-rhyme-docs-site docs-site --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
+  build_image lens-rhyme-content-frontend content-frontend --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
 
   {
     if [[ -n "$COMPOSE_PROJECT_NAME" ]]; then

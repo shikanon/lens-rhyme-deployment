@@ -18,6 +18,7 @@ stringData:
   OPENVIKING_API_KEY: ""
   POSTGRES_PASSWORD: lens_rhyme
   DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
+  CONTENT_REVALIDATION_SECRET: replace-with-a-random-content-revalidation-secret
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -44,6 +45,11 @@ data:
   TEST_USER_USERNAME: test_user
   POSTGRES_DB: lens_rhyme
   POSTGRES_USER: lens_rhyme
+  CONTENT_SITE_URL: https://lensrhyme.com
+  CONTENT_FRONTEND_REVALIDATION_URLS: http://content-frontend:3002/internal/content/revalidate
+  CONTENT_SOURCE: api
+  CONTENT_API_BASE_URL: http://backend:8000/api/v1/public/content
+  CONTENT_API_REQUIRED: "1"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -62,6 +68,53 @@ data:
         gzip_vary on;
         gzip_min_length 1024;
         gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+        location = /internal/content/revalidate {
+            limit_except POST { deny all; }
+            proxy_pass http://content-frontend:3002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Forwarded-Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location ~ ^/(?:blog|guides|workflows|templates|compare|use-cases)(?:/|$) {
+            proxy_pass http://content-frontend:3002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Forwarded-Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location ~ ^/(?:search|feed\.xml|sitemap\.xml|sitemaps/.*|robots\.txt|manifest\.webmanifest|indexnow-key\.txt)$ {
+            proxy_pass http://content-frontend:3002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Forwarded-Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location ^~ /content-assets/ {
+            proxy_pass http://content-frontend:3002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+
+        location ^~ /editorial/ {
+            proxy_pass http://content-frontend:3002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
 
         location ~* _next/static/ {
             proxy_pass http://frontend:3000;
@@ -598,6 +651,44 @@ spec:
   ports:
     - port: 80
       targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: content-frontend
+  namespace: lens-rhyme
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: content-frontend
+  template:
+    metadata:
+      labels:
+        app: content-frontend
+    spec:
+      containers:
+        - name: content-frontend
+          image: shikanon096/lens-rhyme-content-frontend:latest
+          ports:
+            - containerPort: 3002
+          envFrom:
+            - configMapRef:
+                name: lens-rhyme-config
+            - secretRef:
+                name: lens-rhyme-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: content-frontend
+  namespace: lens-rhyme
+spec:
+  selector:
+    app: content-frontend
+  ports:
+    - port: 3002
+      targetPort: 3002
 ---
 apiVersion: apps/v1
 kind: Deployment

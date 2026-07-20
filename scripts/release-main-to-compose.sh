@@ -69,7 +69,7 @@ Options:
   -h, --help                 Show this help.
 
 The script releases the latest remote main commit, not local uncommitted work.
-The application repo CD workflow should build and push all four images when the
+The application repo CD workflow should build and push all five images when the
 release tag is pushed.
 
 If --host is omitted, the script uses DEPLOY_HOST or prompts for a server

@@ -64,6 +64,14 @@ services:
       RESOURCEFS_BUCKET: ${RESOURCEFS_BUCKET:-resources}
       RESOURCEFS_CDN_BASE_URL: ${RESOURCEFS_CDN_BASE_URL:-}
       RESOURCEFS_CDN_SIGNING_SECRET: ${RESOURCEFS_CDN_SIGNING_SECRET:-}
+      CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+      CONTENT_FRONTEND_REVALIDATION_URLS: ${CONTENT_FRONTEND_REVALIDATION_URLS:-http://content-frontend:3002/internal/content/revalidate}
+      CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
+      CONTENT_CDN_PURGE_ENDPOINT: ${CONTENT_CDN_PURGE_ENDPOINT:-}
+      CONTENT_CDN_PURGE_TOKEN: ${CONTENT_CDN_PURGE_TOKEN:-}
+      INDEXNOW_ENABLED: ${INDEXNOW_ENABLED:-false}
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      INDEXNOW_KEY_LOCATION: ${INDEXNOW_KEY_LOCATION:-https://lensrhyme.com/indexnow-key.txt}
     depends_on:
       backend-init:
         condition: service_completed_successfully
@@ -220,6 +228,22 @@ services:
     image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-docs-site:${IMAGE_TAG:-latest}
     restart: always
 
+  content-frontend:
+    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-content-frontend:${IMAGE_TAG:-latest}
+    environment:
+      NEXT_PUBLIC_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+      NEXT_PUBLIC_PRODUCT_URL: ${CONTENT_PRODUCT_URL:-https://lensrhyme.com/login}
+      CONTENT_SOURCE: ${CONTENT_SOURCE:-api}
+      CONTENT_API_BASE_URL: ${CONTENT_API_BASE_URL:-http://backend:8000/api/v1/public/content}
+      CONTENT_API_REQUIRED: ${CONTENT_API_REQUIRED:-1}
+      CONTENT_API_REVALIDATE_SECONDS: ${CONTENT_API_REVALIDATE_SECONDS:-300}
+      CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      CONTENT_MEDIA_HOSTS: ${CONTENT_MEDIA_HOSTS:-lensrhyme.tos-cn-hongkong.volces.com,cdn.lens-rhyme.tensorbytes.com}
+    depends_on:
+      - backend
+    restart: always
+
   nginx:
     image: nginx:alpine
     configs:
@@ -234,6 +258,7 @@ services:
       - frontend
       - admin-frontend
       - docs-site
+      - content-frontend
     restart: always
 
 volumes:
@@ -259,6 +284,58 @@ configs:
           gzip_vary on;
           gzip_min_length 1024;
           gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+          location = /internal/content/revalidate {
+              limit_except POST { deny all; }
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              proxy_set_header X-Forwarded-Host $$http_host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location ~ ^/(?:blog|guides|workflows|templates|compare|use-cases)(?:/|$$) {
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              proxy_set_header X-Forwarded-Host $$http_host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location ~ ^/(?:search|feed\.xml|sitemap\.xml|sitemaps/.*|robots\.txt|manifest\.webmanifest|indexnow-key\.txt)$$ {
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              proxy_set_header X-Forwarded-Host $$http_host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location ^~ /content-assets/ {
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              expires 1y;
+              add_header Cache-Control "public, immutable";
+          }
+
+          location ^~ /editorial/ {
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              expires 1y;
+              add_header Cache-Control "public, immutable";
+          }
 
           location ~* _next/static/ {
               set $$upstream http://frontend:3000;

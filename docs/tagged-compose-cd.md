@@ -23,7 +23,7 @@ production releases should always pass a release tag.
 ## Image Build Trigger
 
 The current implementation uses the application repository GitHub Actions `CD`
-workflow. A push to a `deploy-*` Git tag builds all four images and pushes them
+workflow. A push to a `deploy-*` Git tag builds all five images and pushes them
 to Docker Hub.
 
 | Docker Hub repository | Build context | Dockerfile |
@@ -32,6 +32,7 @@ to Docker Hub.
 | `lens-rhyme-frontend` | `/frontend` | `Dockerfile` |
 | `lens-rhyme-admin-frontend` | `/admin-frontend` | `Dockerfile` |
 | `lens-rhyme-docs-site` | `/docs-site` | `Dockerfile` |
+| `lens-rhyme-content-frontend` | `/content-frontend` | `Dockerfile` |
 
 The GitHub Actions workflow authenticates with a scoped Docker Hub personal
 access token stored in repository secrets. Account passwords must not be used
@@ -50,8 +51,8 @@ What it does:
 
 1. Fetches the application repo remote branch, defaulting to `origin/main`.
 2. Creates and pushes a `deploy-*` release tag at the remote branch commit.
-3. Lets the application CD workflow build all four images from that tag.
-4. Waits until all four images exist in the selected registry with the same tag.
+3. Lets the application CD workflow build all five images from that tag.
+4. Waits until all five images exist in the selected registry with the same tag.
 5. SSHes to the server, writes `.release.env`, pulls the tag, runs Compose, and
    checks `http://127.0.0.1/` plus `http://127.0.0.1/docs/`.
 
@@ -199,7 +200,7 @@ done < hosts.txt
 
 For more than a handful of servers, graduate this flow to Ansible or a GitHub
 Actions environment matrix. The same contract still applies: one release tag,
-four images, many Compose targets.
+five images, many Compose targets.
 
 ## Better CD Options
 
@@ -207,7 +208,7 @@ GitHub Actions tag builds plus these scripts are the lowest-friction path
 because they fit the current Compose servers. The next step up is a fuller
 release pipeline:
 
-- build and push all four images with Docker Buildx.
+- build and push all five images with Docker Buildx.
 - use environments for staging/production approvals.
 - deploy to multiple hosts through an inventory matrix.
 - publish a release summary with image digests and health-check results.
