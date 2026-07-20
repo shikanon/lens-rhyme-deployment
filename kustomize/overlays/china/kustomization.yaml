@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../kubernetes
+images:
+  - name: shikanon096/lens-rhyme-backend
+    newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend
+  - name: shikanon096/lens-rhyme-frontend
+    newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-frontend
+  - name: shikanon096/lens-rhyme-admin-frontend
+    newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend
+  - name: shikanon096/lens-rhyme-docs-site
+    newName: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site

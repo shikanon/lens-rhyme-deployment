@@ -3,13 +3,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
+source "${SCRIPT_DIR}/lib/deployment-region.sh"
 
 HOST=""
 DEPLOY_DIR="/root/lens-rhyme-deployment"
 DEPLOYMENT_REPO="${DEPLOYMENT_REPO:-https://github.com/shikanon/lens-rhyme-deployment.git}"
 DEPLOYMENT_REF="${DEPLOYMENT_REF:-main}"
 COMPOSE_FILE="compose/docker-compose.yml"
-REGISTRY="${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}"
+DEPLOYMENT_REGION="${DEPLOYMENT_REGION:-overseas}"
+REGISTRY="${IMAGE_REGISTRY:-}"
 TAG="${IMAGE_TAG:-latest}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-lens-rhyme}"
 FORCE_ENV=false
@@ -40,7 +42,8 @@ Options:
   --deployment-repo <url>    Deployment repo URL. Defaults to shikanon/lens-rhyme-deployment.
   --deployment-ref <ref>     Deployment repo branch/tag to check out. Defaults to main.
   --compose-file <path>      Compose file relative to --dir. Defaults to compose/docker-compose.yml.
-  --registry <registry/ns>   Registry namespace. Defaults to Aliyun LensRhyme.
+  --region <overseas|china> Deployment mode. Defaults to overseas.
+  --registry <registry/ns>   Override the registry selected by --region.
   --tag <image-tag>          Image tag to deploy. Defaults to IMAGE_TAG or latest.
   --project-name <name>      Compose project name. Defaults to lens-rhyme.
   --force-env                Replace an existing remote .env file.
@@ -101,6 +104,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --registry)
       REGISTRY="${2:?missing registry}"
+      shift 2
+      ;;
+    --region)
+      DEPLOYMENT_REGION="${2:?missing deployment region}"
       shift 2
       ;;
     --tag)
@@ -187,6 +194,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
+REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
+
 HOST="$(resolve_deploy_host "$HOST")"
 prepare_ssh_password
 
@@ -254,6 +264,7 @@ if [[ "$FORCE_ENV" == "true" || "$remote_env_exists" == "false" ]]; then
   trap 'rm -f "$env_file"' EXIT
 
   COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" \
+  DEPLOYMENT_REGION="$DEPLOYMENT_REGION" \
   IMAGE_REGISTRY="$REGISTRY" \
   IMAGE_TAG="$TAG" \
   python3 - "$env_file" <<'PY'
@@ -320,7 +331,8 @@ platform_config = {key: value for key, value in platform_config_sources.items() 
 
 values = [
     ("COMPOSE_PROJECT_NAME", getenv("COMPOSE_PROJECT_NAME", "lens-rhyme")),
-    ("IMAGE_REGISTRY", getenv("IMAGE_REGISTRY", "registry.cn-hangzhou.aliyuncs.com/lens-rhyme")),
+    ("DEPLOYMENT_REGION", getenv("DEPLOYMENT_REGION", "overseas")),
+    ("IMAGE_REGISTRY", getenv("IMAGE_REGISTRY", "shikanon096")),
     ("IMAGE_TAG", getenv("IMAGE_TAG", "latest")),
     ("SECRET_KEY", getenv("SECRET_KEY") or random_secret()),
     ("ADMIN_DEFAULT_USERNAME", getenv("ADMIN_DEFAULT_USERNAME", "admin")),
@@ -370,6 +382,7 @@ deploy_args=(
   --host "$HOST"
   --dir "$DEPLOY_DIR"
   --compose-file "$COMPOSE_FILE"
+  --region "$DEPLOYMENT_REGION"
   --registry "$REGISTRY"
   --tag "$TAG"
   --project-name "$COMPOSE_PROJECT_NAME"

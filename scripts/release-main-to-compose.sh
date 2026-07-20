@@ -4,13 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
+source "${SCRIPT_DIR}/lib/deployment-region.sh"
 
 APP_REPO="${APP_REPO:-${REPO_ROOT}/../lens-rhyme}"
 APP_REMOTE="${APP_REMOTE:-origin}"
 APP_BRANCH="${APP_BRANCH:-main}"
 HOST=""
 DEPLOY_DIR="/root/lens-rhyme-deployment"
-REGISTRY="${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}"
+DEPLOYMENT_REGION="${DEPLOYMENT_REGION:-overseas}"
+REGISTRY="${IMAGE_REGISTRY:-}"
 TAG=""
 TAG_PREFIX="deploy"
 WAIT_TIMEOUT=2700
@@ -43,11 +45,12 @@ Options:
   --branch <name>            Application branch to release. Defaults to main.
   --tag <tag>                Reuse or create this tag. Default: deploy-UTC-<shortsha>.
   --tag-prefix <prefix>      Prefix for generated tags. Defaults to deploy.
-  --registry <registry/ns>   Registry namespace. Defaults to Aliyun LensRhyme.
+  --region <overseas|china> Deployment mode. Defaults to overseas.
+  --registry <registry/ns>   Override the registry selected by --region.
   --dir <path>               Remote deployment repo. Defaults to /root/lens-rhyme-deployment.
   --deployment-ref <ref>     Optional deployment repo branch/tag to fetch and check out before deploy.
-  --wait-timeout <seconds>   ACR image wait timeout. Defaults to 2700.
-  --wait-interval <seconds>  ACR image poll interval. Defaults to 30.
+  --wait-timeout <seconds>   Registry image wait timeout. Defaults to 2700.
+  --wait-interval <seconds>  Registry image poll interval. Defaults to 30.
   --skip-wait                Do not wait for registry images before deployment.
   --skip-deploy              Create/push the tag and wait for images, but do not SSH deploy.
   --run-smoke-test           Run post-deploy smoke tests after Compose route checks.
@@ -100,6 +103,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --registry)
       REGISTRY="${2:?missing registry}"
+      shift 2
+      ;;
+    --region)
+      DEPLOYMENT_REGION="${2:?missing deployment region}"
       shift 2
       ;;
     --tag)
@@ -194,6 +201,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
+REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
+
 if [[ "$SKIP_DEPLOY" != "true" ]]; then
   HOST="$(resolve_deploy_host "$HOST")"
   prepare_ssh_password
@@ -233,6 +243,7 @@ echo "Released ${target_ref} ${target_commit} as ${TAG}."
 
 if [[ "$SKIP_WAIT" != "true" ]]; then
   "${SCRIPT_DIR}/wait-acr-images.sh" \
+    --region "$DEPLOYMENT_REGION" \
     --registry "$REGISTRY" \
     --tag "$TAG" \
     --timeout "$WAIT_TIMEOUT" \
@@ -243,6 +254,7 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
   deploy_args=(
     --host "$HOST"
     --dir "$DEPLOY_DIR"
+    --region "$DEPLOYMENT_REGION"
     --registry "$REGISTRY"
     --tag "$TAG"
   )

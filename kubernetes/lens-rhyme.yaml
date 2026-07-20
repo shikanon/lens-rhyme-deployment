@@ -450,7 +450,7 @@ spec:
     spec:
       initContainers:
         - name: backend-init
-          image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+          image: shikanon096/lens-rhyme-backend:latest
           envFrom:
             - configMapRef:
                 name: lens-rhyme-config
@@ -467,7 +467,7 @@ spec:
               mountPath: /app/outputs
       containers:
         - name: backend
-          image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:latest
+          image: shikanon096/lens-rhyme-backend:latest
           ports:
             - containerPort: 8000
           envFrom:
@@ -517,7 +517,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-frontend:latest
+          image: shikanon096/lens-rhyme-frontend:latest
           ports:
             - containerPort: 3000
 ---
@@ -550,7 +550,7 @@ spec:
     spec:
       containers:
         - name: admin-frontend
-          image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend:latest
+          image: shikanon096/lens-rhyme-admin-frontend:latest
           ports:
             - containerPort: 3001
 ---
@@ -583,7 +583,7 @@ spec:
     spec:
       containers:
         - name: docs-site
-          image: registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site:latest
+          image: shikanon096/lens-rhyme-docs-site:latest
           ports:
             - containerPort: 80
 ---

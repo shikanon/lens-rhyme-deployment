@@ -3,12 +3,31 @@
 This repository contains deployment configuration for LensRhyme.
 
 Application images are built by the LensRhyme CI/CD pipeline and published to
-Aliyun Container Registry:
+Docker Hub by default:
 
-- `backend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-backend:<tag>`
-- `frontend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-frontend:<tag>`
-- `admin-frontend`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-admin-frontend:<tag>`
-- `docs-site`: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme/lens-rhyme-docs-site:<tag>`
+- `backend`: `shikanon096/lens-rhyme-backend:<tag>`
+- `frontend`: `shikanon096/lens-rhyme-frontend:<tag>`
+- `admin-frontend`: `shikanon096/lens-rhyme-admin-frontend:<tag>`
+- `docs-site`: `shikanon096/lens-rhyme-docs-site:<tag>`
+
+## Deployment Regions
+
+The deployment mode defaults to `overseas`, which pulls the public Docker Hub
+images above. Deployment scripts also accept `--region china`; that mode selects
+`registry.cn-hangzhou.aliyuncs.com/lens-rhyme` unless `--registry` or
+`IMAGE_REGISTRY` explicitly overrides it.
+
+```bash
+# Default overseas deployment
+scripts/deploy-compose.sh --tag <release-tag>
+
+# China deployment after mirroring the same immutable tag to ACR
+scripts/deploy-compose.sh --region china --tag <release-tag>
+```
+
+China mode does not silently copy images. Mirror all four images with the same
+immutable tag before deploying. Explicit registry overrides always take
+precedence over the region default.
 
 ## Directory Layout
 
@@ -38,7 +57,7 @@ The Compose file is self-contained: it stores backend runtime data in Docker
 named volumes and embeds the Nginx proxy config through Compose `configs`.
 
 For fast single-server self-host deployments that build images on the target
-machine instead of pushing them through Aliyun Container Registry, use
+machine instead of pushing them through a remote registry, use
 `scripts/self-host-compose-cd.sh`. See
 [`docs/self-host-compose-cd.md`](docs/self-host-compose-cd.md).
 
@@ -50,8 +69,8 @@ scripts/release-main-to-compose.sh \
 ```
 
 The script prompts for the target server host/IP and SSH password when they are
-not provided. It tags the latest application `origin/main`, waits for Aliyun
-Container Registry to expose all four images with the same tag, then deploys
+not provided. It tags the latest application `origin/main`, waits for the
+selected registry to expose all four images with the same tag, then deploys
 that tag on the target server. See `docs/tagged-compose-cd.md` for the
 tag-triggered build contract, rollback flow, and multi-server options.
 
