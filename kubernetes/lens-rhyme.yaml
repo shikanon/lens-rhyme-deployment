@@ -80,7 +80,7 @@ data:
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        location ~ ^/(?:blog|guides|workflows|templates|compare|use-cases)(?:/|$) {
+        location ~ ^/(?:blog|press|guides|workflows|templates|compare|use-cases)(?:/|$) {
             proxy_pass http://content-frontend:3002;
             proxy_http_version 1.1;
             proxy_set_header Host $http_host;
