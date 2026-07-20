@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REGISTRY="${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/lens-rhyme}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/deployment-region.sh"
+
+DEPLOYMENT_REGION="${DEPLOYMENT_REGION:-overseas}"
+REGISTRY="${IMAGE_REGISTRY:-}"
 TAG="${IMAGE_TAG:-}"
 TIMEOUT_SECONDS=2700
 INTERVAL_SECONDS=30
@@ -17,8 +21,12 @@ usage() {
 Usage:
   scripts/wait-acr-images.sh --tag <image-tag> [options]
 
+The filename is retained for backward compatibility; the script supports any
+Docker registry.
+
 Options:
-  --registry <registry/ns>   Registry namespace. Defaults to Aliyun LensRhyme.
+  --region <overseas|china> Deployment mode. Defaults to overseas.
+  --registry <registry/ns>   Override the registry selected by --region.
   --timeout <seconds>        Total wait time. Defaults to 2700.
   --interval <seconds>       Poll interval. Defaults to 30.
   -h, --help                 Show this help.
@@ -33,6 +41,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --registry)
       REGISTRY="${2:?missing registry}"
+      shift 2
+      ;;
+    --region)
+      DEPLOYMENT_REGION="${2:?missing deployment region}"
       shift 2
       ;;
     --tag)
@@ -58,6 +70,9 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
+REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
 
 if [[ -z "$TAG" ]]; then
   echo "--tag is required" >&2

@@ -3,14 +3,17 @@
 LensRhyme Compose deployments should use immutable image tags instead of
 rebuilding application source on each server. The release tag is created in the
 application repository, the application CD workflow builds and pushes all
-application images to Aliyun Container Registry with that same tag, and each
+application images to Docker Hub with that same tag, and each
 server pulls that tag through this deployment repo.
 
 ## Release Contract
 
 - Application source of truth: `shikanon/lens-rhyme`.
 - Deployment source of truth: `shikanon/lens-rhyme-deployment`.
-- Registry namespace: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme`.
+- Default region: `overseas`.
+- Default registry namespace: `shikanon096` on Docker Hub.
+- China registry namespace: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme`
+  after the release tag is explicitly mirrored.
 - Release tag format: `deploy-YYYYMMDDHHMMSS-<shortsha>`.
 - Compose runtime override file: `.release.env`, generated on the server.
 
@@ -21,25 +24,22 @@ production releases should always pass a release tag.
 
 The current implementation uses the application repository GitHub Actions `CD`
 workflow. A push to a `deploy-*` Git tag builds all four images and pushes them
-to Aliyun Container Registry.
+to Docker Hub.
 
-| ACR repository | Build context | Dockerfile |
+| Docker Hub repository | Build context | Dockerfile |
 | --- | --- | --- |
 | `lens-rhyme-backend` | `/backend` | `Dockerfile` |
 | `lens-rhyme-frontend` | `/frontend` | `Dockerfile` |
 | `lens-rhyme-admin-frontend` | `/admin-frontend` | `Dockerfile` |
 | `lens-rhyme-docs-site` | `/docs-site` | `Dockerfile` |
 
-The ACR Personal Edition console was checked on 2026-06-22. Its custom build
-rule form accepts a tag pattern, but the image version field rejects `$version`;
-the only built-in `release-v$version` rule builds from the repository root, so
-it does not fit this monorepo. Keep ACR as the registry and use GitHub Actions
-for tag-triggered monorepo builds unless the project moves to ACR Enterprise
-Edition or another build service with dynamic image tag mapping.
+The GitHub Actions workflow authenticates with a scoped Docker Hub personal
+access token stored in repository secrets. Account passwords must not be used
+by CI.
 
 ## One-Command Release
 
-Run from this repository after the ACR rules exist:
+Run from this repository:
 
 ```bash
 scripts/release-main-to-compose.sh \
@@ -51,7 +51,7 @@ What it does:
 1. Fetches the application repo remote branch, defaulting to `origin/main`.
 2. Creates and pushes a `deploy-*` release tag at the remote branch commit.
 3. Lets the application CD workflow build all four images from that tag.
-4. Waits until all four ACR images exist with the same tag.
+4. Waits until all four images exist in the selected registry with the same tag.
 5. SSHes to the server, writes `.release.env`, pulls the tag, runs Compose, and
    checks `http://127.0.0.1/` plus `http://127.0.0.1/docs/`.
 

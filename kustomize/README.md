@@ -1,7 +1,13 @@
 # Kustomize
 
-Reserved for Kustomize bases and overlays.
+Kustomize overlays select regional image registries while keeping the raw
+Kubernetes manifest as the shared base.
 
-The raw Kubernetes manifest is currently maintained in
-`../kubernetes/lens-rhyme.yaml`. Add bases and environment overlays here when
-LensRhyme needs cluster-specific customization.
+- Overseas is the default in `../kubernetes/lens-rhyme.yaml` and uses Docker Hub.
+- `overlays/china` rewrites the four LensRhyme images to Aliyun ACR.
+
+Mirror the selected immutable release tag to ACR before applying China mode:
+
+```bash
+kubectl kustomize kustomize/overlays/china
+```

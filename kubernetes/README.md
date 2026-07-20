@@ -8,6 +8,13 @@ Raw Kubernetes manifests for LensRhyme using prebuilt CI/CD images.
 kubectl apply -f kubernetes/lens-rhyme.yaml
 ```
 
+This is the default overseas mode and uses Docker Hub. For China mode, mirror
+the same image tags to Aliyun ACR and render the overlay:
+
+```bash
+kubectl kustomize kustomize/overlays/china | kubectl apply -f -
+```
+
 The manifest creates the `lens-rhyme` namespace, application workloads,
 Postgres/OpenViking dependencies, services, PVCs, Nginx reverse proxy, and an
 example ingress.

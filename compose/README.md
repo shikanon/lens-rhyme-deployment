@@ -6,8 +6,8 @@ build images from application source.
 
 ## Files
 
-- `docker-compose.yml`: runs prebuilt images from Aliyun Container Registry.
-- `docker-compose.aliyun.yml`: compatibility alias for the same registry-image stack.
+- `docker-compose.yml`: overseas default using public Docker Hub images.
+- `docker-compose.aliyun.yml`: China compatibility variant using Aliyun ACR.
 - `nginx.conf`: reference Nginx reverse proxy configuration. The Compose stack
   embeds the same proxy config so it can run standalone.
 
@@ -15,11 +15,19 @@ build images from application source.
 
 Run commands from this repository root.
 
-Aliyun registry deployment:
+Default overseas deployment:
 
 ```bash
 IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml pull
 IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml up -d
+```
+
+China deployment requires the same immutable tag to be mirrored to ACR:
+
+```bash
+DEPLOYMENT_REGION=china IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/lens-rhyme \
+  IMAGE_TAG=deploy-20260622120000-7cf974f \
+  docker compose --env-file .env -f compose/docker-compose.aliyun.yml up -d
 ```
 
 `IMAGE_TAG` defaults to `latest` for compatibility. Production releases should
