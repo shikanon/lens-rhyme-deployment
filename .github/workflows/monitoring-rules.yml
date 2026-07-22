@@ -6,8 +6,6 @@ on:
       - "monitoring/**"
       - ".github/workflows/monitoring-rules.yml"
   push:
-    branches:
-      - main
     paths:
       - "monitoring/**"
       - ".github/workflows/monitoring-rules.yml"
