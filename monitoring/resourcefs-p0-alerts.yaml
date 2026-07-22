@@ -1,0 +1,72 @@
+groups:
+  - name: lens-rhyme-resourcefs-p0
+    rules:
+      - alert: LensRhymeDatabaseIdleTransaction
+        expr: lens_rhyme_db_idle_in_transaction_sessions > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: LensRhyme has an idle PostgreSQL transaction
+          description: ResourceFS and Canvas requests should not retain a transaction while waiting on storage or CDN I/O.
+
+      - alert: LensRhymeDatabaseLongTransaction
+        expr: lens_rhyme_db_oldest_transaction_age_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: LensRhyme PostgreSQL transaction is older than one minute
+          description: Inspect the request or worker operation before it reaches the configured idle-in-transaction guardrail.
+
+      - alert: LensRhymeDatabaseLockChain
+        expr: lens_rhyme_db_lock_waiting_sessions > 0 and lens_rhyme_db_oldest_lock_wait_seconds > 15
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: LensRhyme PostgreSQL lock wait is blocking work
+          description: Inspect pg_stat_activity and pg_locks for the blocking session; ResourceFS object-store I/O must not hold row locks.
+
+      - alert: LensRhymeDatabaseConnectionPressure
+        expr: lens_rhyme_db_connection_utilization_ratio > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: LensRhyme PostgreSQL connection utilization exceeds 85 percent
+          description: Check API/worker pool sizing and active database sessions before the pool exhausts.
+
+      - alert: LensRhymeDatabasePoolExhaustion
+        expr: lens_rhyme_db_pool_requests_waiting > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: LensRhyme requests are waiting for a PostgreSQL pool connection
+          description: Check pool utilization, connection limits, and long-running database transactions.
+
+      - alert: LensRhymeResourceFSExternalOperationSlow
+        expr: histogram_quantile(0.95, sum by (le, operation) (rate(lens_rhyme_resourcefs_operation_duration_seconds_bucket[10m]))) > 15
+        for: 10m
+        labels:
+          severity: warning
+          component: resourcefs
+        annotations:
+          summary: LensRhyme ResourceFS external operation p95 exceeds 15 seconds
+          description: Inspect the operation label and storage/CDN provider latency; database locks should already be released.
+
+      - alert: LensRhymeResourceEndpointSlow
+        expr: histogram_quantile(0.95, sum by (le, route) (rate(lens_rhyme_http_request_duration_seconds_bucket{route=~"/api/v1/resources.*"}[10m]))) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: resourcefs
+        annotations:
+          summary: LensRhyme ResourceFS endpoint p95 exceeds five seconds
+          description: Inspect the route, ResourceFS external-operation histogram, and PostgreSQL transaction/lock alerts together.
