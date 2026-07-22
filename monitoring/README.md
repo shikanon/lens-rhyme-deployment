@@ -18,3 +18,6 @@ Before enabling alerts in production, confirm that Prometheus scrapes the
 backend `/metrics` endpoint and run `promtool check rules
 monitoring/resourcefs-p0-alerts.yaml` from an environment that has Prometheus
 tools installed.
+
+Pull requests that change this directory run the same validation with the
+official `prom/prometheus:v3.12.0` image.
