@@ -465,8 +465,8 @@ run_local() {
   echo "Deploying app ref ${APP_REF} (${target_commit}) as ${IMAGE_TAG}."
 
   build_image lens-rhyme-backend backend --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}"
-  build_image lens-rhyme-frontend frontend --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
-  build_image lens-rhyme-admin-frontend admin-frontend --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
+  build_image lens-rhyme-frontend . --file "${APP_DIR}/frontend/Dockerfile.selfhost" --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
+  build_image lens-rhyme-admin-frontend . --file "${APP_DIR}/admin-frontend/Dockerfile.selfhost" --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
   build_image lens-rhyme-docs-site docs-site --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
   build_image lens-rhyme-content-frontend content-frontend --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
 
