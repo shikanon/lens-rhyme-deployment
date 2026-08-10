@@ -30,6 +30,19 @@ DEPLOYMENT_REGION=china IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/lens-rh
   docker compose --env-file .env -f compose/docker-compose.aliyun.yml up -d
 ```
 
+When ACR credentials are intentionally unavailable, China CD publishes a
+separate Docker Hub mirror using the same repositories and a `-cn` release-tag
+suffix. Use the normal Compose file with the region-aware deploy script and an
+explicit Docker Hub registry override; its local-only proxy tunnel handles the
+cross-border pull:
+
+```bash
+scripts/release-main-to-compose.sh --region china --registry shikanon096 --tag deploy-20260622120000-7cf974f
+```
+
+Adding `ACR_USERNAME` and `ACR_PASSWORD` GitHub secrets switches China CD back
+to the ACR image names and the original release tag automatically.
+
 `IMAGE_TAG` defaults to `latest` for compatibility. Production releases should
 use immutable tags created from the application repository, then deploy through
 `scripts/release-main-to-compose.sh` or `scripts/deploy-compose.sh`. The deploy

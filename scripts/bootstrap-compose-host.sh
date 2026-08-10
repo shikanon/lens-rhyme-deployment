@@ -196,6 +196,7 @@ done
 
 DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
 REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
+DEPLOY_IMAGE_TAG="$(resolve_image_tag "$DEPLOYMENT_REGION" "$REGISTRY" "$TAG")"
 
 HOST="$(resolve_deploy_host "$HOST")"
 prepare_ssh_password
@@ -266,7 +267,7 @@ if [[ "$FORCE_ENV" == "true" || "$remote_env_exists" == "false" ]]; then
   COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" \
   DEPLOYMENT_REGION="$DEPLOYMENT_REGION" \
   IMAGE_REGISTRY="$REGISTRY" \
-  IMAGE_TAG="$TAG" \
+  IMAGE_TAG="$DEPLOY_IMAGE_TAG" \
   python3 - "$env_file" <<'PY'
 import json
 import os
