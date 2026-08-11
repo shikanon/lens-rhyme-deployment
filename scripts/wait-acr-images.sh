@@ -74,6 +74,7 @@ done
 
 DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
 REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
+IMAGE_TAG="$(resolve_image_tag "$DEPLOYMENT_REGION" "$REGISTRY" "$TAG")"
 
 if [[ -z "$TAG" ]]; then
   echo "--tag is required" >&2
@@ -101,14 +102,14 @@ while true; do
   missing=()
 
   for image in "${IMAGES[@]}"; do
-    image_ref="${REGISTRY}/${image}:${TAG}"
+    image_ref="${REGISTRY}/${image}:${IMAGE_TAG}"
     if ! image_exists "$image_ref"; then
       missing+=("$image_ref")
     fi
   done
 
   if [[ ${#missing[@]} -eq 0 ]]; then
-    echo "All LensRhyme images are available for tag ${TAG}."
+    echo "All LensRhyme images are available for tag ${IMAGE_TAG}."
     exit 0
   fi
 

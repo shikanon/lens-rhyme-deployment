@@ -172,6 +172,7 @@ done
 
 DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
 REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
+DEPLOY_IMAGE_TAG="$(resolve_image_tag "$DEPLOYMENT_REGION" "$REGISTRY" "$TAG")"
 
 if [[ -z "$TAG" ]]; then
   echo "--tag is required" >&2
@@ -191,6 +192,7 @@ fi
 printf -v q_deploy_dir '%q' "$DEPLOY_DIR"
 printf -v q_compose_file '%q' "$COMPOSE_FILE"
 printf -v q_registry '%q' "$REGISTRY"
+printf -v q_image_tag '%q' "$DEPLOY_IMAGE_TAG"
 printf -v q_deployment_region '%q' "$DEPLOYMENT_REGION"
 printf -v q_tag '%q' "$TAG"
 printf -v q_project '%q' "$COMPOSE_PROJECT_NAME"
@@ -210,7 +212,7 @@ printf -v q_prerelease_gc_max_age_hours '%q' "$PRERELEASE_GC_MAX_AGE_HOURS"
 printf -v q_prerelease_lock_wait_seconds '%q' "$PRERELEASE_LOCK_WAIT_SECONDS"
 
 "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "$HOST" \
-  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} DEPLOYMENT_REGION=${q_deployment_region} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} RUN_PRERELEASE_VALIDATION=${q_run_prerelease_validation} PRERELEASE_APP_REPO=${q_prerelease_app_repo} PRERELEASE_ADMIN_BASE_URL=${q_prerelease_admin_base_url} PRERELEASE_FRONTEND_BASE_URL=${q_prerelease_frontend_base_url} PRERELEASE_API_BASE_URL=${q_prerelease_api_base_url} PRERELEASE_DATABASE_URL=${q_prerelease_database_url} PRERELEASE_VOLCENGINE_API_KEY=${q_prerelease_volcengine_api_key} PRERELEASE_REPORT_DIR=${q_prerelease_report_dir} PRERELEASE_GC_MAX_AGE_HOURS=${q_prerelease_gc_max_age_hours} PRERELEASE_LOCK_WAIT_SECONDS=${q_prerelease_lock_wait_seconds} bash -s" <<'REMOTE_SCRIPT'
+  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} DEPLOYMENT_REGION=${q_deployment_region} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_image_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} RUN_PRERELEASE_VALIDATION=${q_run_prerelease_validation} PRERELEASE_APP_REPO=${q_prerelease_app_repo} PRERELEASE_ADMIN_BASE_URL=${q_prerelease_admin_base_url} PRERELEASE_FRONTEND_BASE_URL=${q_prerelease_frontend_base_url} PRERELEASE_API_BASE_URL=${q_prerelease_api_base_url} PRERELEASE_DATABASE_URL=${q_prerelease_database_url} PRERELEASE_VOLCENGINE_API_KEY=${q_prerelease_volcengine_api_key} PRERELEASE_REPORT_DIR=${q_prerelease_report_dir} PRERELEASE_GC_MAX_AGE_HOURS=${q_prerelease_gc_max_age_hours} PRERELEASE_LOCK_WAIT_SECONDS=${q_prerelease_lock_wait_seconds} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 cd "$DEPLOY_DIR"

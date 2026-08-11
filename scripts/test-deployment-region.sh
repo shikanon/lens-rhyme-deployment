@@ -22,6 +22,11 @@ assert_eq registry.cn-hangzhou.aliyuncs.com/lens-rhyme \
   "$(resolve_image_registry china '')"
 assert_eq registry.example.com/team \
   "$(resolve_image_registry china registry.example.com/team)"
+assert_eq deploy-123 "$(resolve_image_tag overseas '' deploy-123)"
+assert_eq deploy-123 "$(resolve_image_tag china '' deploy-123)"
+assert_eq deploy-123-cn "$(resolve_image_tag china shikanon096 deploy-123)"
+assert_eq deploy-123-cn "$(resolve_image_tag china docker.io/shikanon096 deploy-123)"
+assert_eq deploy-123-cn "$(resolve_image_tag china shikanon096 deploy-123-cn)"
 
 if normalize_deployment_region unsupported >/dev/null 2>&1; then
   echo "Unsupported regions must fail." >&2
