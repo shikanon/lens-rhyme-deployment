@@ -11,6 +11,7 @@ TIMEOUT_SECONDS=2700
 INTERVAL_SECONDS=30
 IMAGES=(
   lens-rhyme-backend
+  lens-rhyme-codex-runner
   lens-rhyme-frontend
   lens-rhyme-admin-frontend
   lens-rhyme-docs-site

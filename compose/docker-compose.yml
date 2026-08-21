@@ -4,7 +4,6 @@ services:
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
-      - codex_home:/codex-home
     environment:
       DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
       BACKEND_DATA_PATH: /app/data
@@ -31,7 +30,6 @@ services:
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
-      - codex_home:/codex-home
     environment:
       SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
       DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
@@ -42,13 +40,16 @@ services:
       OPENVIKING_CLIENT_API_KEY: ${OPENVIKING_CLIENT_API_KEY:-}
       ADMIN_DEFAULT_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin123}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      CODEX_HOME: /codex-home
-      CODEX_AUTO_LOGIN: ${CODEX_AUTO_LOGIN:-true}
-      CHAT_CODEX_APPROVAL_POLICY: never
+      CODEX_AUTH_SECRET_MASTER_KEY: ${CODEX_AUTH_SECRET_MASTER_KEY:-}
+      CHAT_CODEX_APPROVAL_MODE: deny_all
+      CHAT_CODEX_RUNTIME: sdk
+      CHAT_CODEX_RUNNER_MODE: remote_required
+      CHAT_CODEX_AUTH_PROFILE_ADMIN_ENABLED: "true"
+      CHAT_CODEX_PLATFORM_API_KEY_AUTH_ENABLED: "true"
       CHAT_CODEX_USE_SELECTED_MODEL: "false"
       CHAT_CODEX_RUNNER_MANAGER_URL: http://codex-runner-manager:8080
       CODEX_RUNNER_MANAGER_TOKEN: ${CODEX_RUNNER_MANAGER_TOKEN:-lens-rhyme-runner-local-token}
+      CHAT_RUNNER_GRANT_SECRET: ${CHAT_RUNNER_GRANT_SECRET:-lens-rhyme-runner-local-grant}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
       OBJECT_STORAGE_PROVIDER: ${OBJECT_STORAGE_PROVIDER:-}
       OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
@@ -81,55 +82,45 @@ services:
         condition: service_started
       codex-runner-manager:
         condition: service_healthy
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        mkdir -p "$${CODEX_HOME:-/codex-home}"
-        if [ "$${CODEX_AUTO_LOGIN:-true}" = "true" ] && [ -n "$${OPENAI_API_KEY:-}" ] && [ ! -s "$${CODEX_HOME:-/codex-home}/auth.json" ]; then
-          printenv OPENAI_API_KEY | codex login --with-api-key >/tmp/codex-login.log 2>&1 || {
-            cat /tmp/codex-login.log >&2
-            exit 1
-          }
-        fi
-        exec python -m scripts.server start --host 0.0.0.0 --port 8000
+    command: ["python", "-m", "scripts.server", "start", "--host", "0.0.0.0", "--port", "8000"]
     restart: always
 
   codex-runner-manager:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-codex-runner:${IMAGE_TAG:-latest}
     volumes:
-      - codex_home:/codex-home
       - codex_runner_data:/app/data
       - backend_outputs:/app/outputs
     environment:
-      CODEX_HOME: /codex-home
-      CODEX_AUTO_LOGIN: ${CODEX_AUTO_LOGIN:-true}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      CHAT_CODEX_BINARY: codex
-      CHAT_CODEX_APPROVAL_POLICY: never
+      SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
+      DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
+      CODEX_AUTH_SECRET_MASTER_KEY: ${CODEX_AUTH_SECRET_MASTER_KEY:-}
+      CHAT_CODEX_RUNTIME: sdk
+      CHAT_CODEX_APPROVAL_MODE: deny_all
+      CHAT_CODEX_AUTH_PROFILE_ADMIN_ENABLED: "true"
+      CHAT_CODEX_PLATFORM_API_KEY_AUTH_ENABLED: "true"
       CHAT_CODEX_USE_SELECTED_MODEL: "false"
       CHAT_CODEX_ALLOW_WEB_ACCESS: "false"
-      CHAT_PLATFORM_CONFIG_ENV_ONLY: "true"
       CODEX_RUNNER_MANAGER_TOKEN: ${CODEX_RUNNER_MANAGER_TOKEN:-lens-rhyme-runner-local-token}
+      CHAT_RUNNER_GRANT_SECRET: ${CHAT_RUNNER_GRANT_SECRET:-lens-rhyme-runner-local-grant}
+      CHAT_RUNNER_GRANTS_REQUIRED: "true"
+      CHAT_RUNNER_DURABLE_CONTROL_ENABLED: "true"
+      CHAT_RUNNER_DURABLE_CONTROL_REQUIRED: "true"
       CODEX_RUNNER_WORKDIR_ROOT: /app/data/workdirs
       CODEX_RUNNER_TURN_TIMEOUT_SECONDS: "600"
       CODEX_RUNNER_OUTPUT_CHUNK_BYTES: "16384"
       CODEX_RUNNER_OUTPUT_TURN_BYTES: "16777216"
-      RUNNER_SUBSTRATE: process
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        mkdir -p "$${CODEX_HOME:-/codex-home}" "$${CODEX_RUNNER_WORKDIR_ROOT:-/app/data/workdirs}"
-        if [ "$${CODEX_AUTO_LOGIN:-true}" = "true" ] && [ -n "$${OPENAI_API_KEY:-}" ] && [ ! -s "$${CODEX_HOME:-/codex-home}/auth.json" ]; then
-          printenv OPENAI_API_KEY | codex login --with-api-key >/tmp/codex-login.log 2>&1 || {
-            cat /tmp/codex-login.log >&2
-            exit 1
-          }
-        fi
-        exec python -m scripts.runner_manager --host 0.0.0.0 --port 8080
+      RUNNER_SUBSTRATE: isolated-container
+    command: ["python", "-m", "scripts.runner_manager", "--host", "0.0.0.0", "--port", "8080"]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
       interval: 10s
@@ -264,7 +255,6 @@ services:
 volumes:
   backend_data:
   backend_outputs:
-  codex_home:
   codex_runner_data:
   postgres_data:
   openviking_data:
