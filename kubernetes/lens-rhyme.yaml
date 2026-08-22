@@ -19,6 +19,9 @@ stringData:
   POSTGRES_PASSWORD: lens_rhyme
   DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
   CONTENT_REVALIDATION_SECRET: replace-with-a-random-content-revalidation-secret
+  CODEX_RUNNER_MANAGER_TOKEN: replace-with-a-random-runner-service-token
+  CHAT_RUNNER_GRANT_SECRET: replace-with-a-distinct-random-runner-grant-secret
+  CODEX_AUTH_SECRET_MASTER_KEY: replace-with-url-safe-base64-of-32-random-bytes
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -50,6 +53,17 @@ data:
   CONTENT_SOURCE: api
   CONTENT_API_BASE_URL: http://backend:8000/api/v1/public/content
   CONTENT_API_REQUIRED: "1"
+  CHAT_CODEX_RUNTIME: sdk
+  CHAT_CODEX_APPROVAL_MODE: deny_all
+  CHAT_CODEX_RUNNER_MODE: remote_required
+  CHAT_CODEX_RUNNER_MANAGER_URL: http://codex-runner-manager:8080
+  CHAT_CODEX_AUTH_PROFILE_ADMIN_ENABLED: "true"
+  CHAT_CODEX_PLATFORM_API_KEY_AUTH_ENABLED: "true"
+  CHAT_RUNNER_GRANTS_REQUIRED: "true"
+  CHAT_RUNNER_DURABLE_CONTROL_ENABLED: "true"
+  CHAT_RUNNER_DURABLE_CONTROL_REQUIRED: "true"
+  CODEX_RUNNER_WORKDIR_ROOT: /app/data/workdirs
+  RUNNER_SUBSTRATE: isolated-container
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -330,6 +344,18 @@ spec:
     requests:
       storage: 50Gi
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: codex-runner-data
+  namespace: lens-rhyme
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -552,6 +578,131 @@ spec:
   ports:
     - port: 8000
       targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codex-runner-manager
+  namespace: lens-rhyme
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: codex-runner-manager
+  template:
+    metadata:
+      labels:
+        app: codex-runner-manager
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: codex-runner-manager
+          image: shikanon096/lens-rhyme-codex-runner:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: lens-rhyme-config
+            - secretRef:
+                name: lens-rhyme-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 15
+          volumeMounts:
+            - name: runner-data
+              mountPath: /app/data
+            - name: runner-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runner-data
+          persistentVolumeClaim:
+            claimName: codex-runner-data
+        - name: runner-tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: codex-runner-manager
+  namespace: lens-rhyme
+spec:
+  selector:
+    app: codex-runner-manager
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: codex-runner-manager-isolation
+  namespace: lens-rhyme
+spec:
+  podSelector:
+    matchLabels:
+      app: codex-runner-manager
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
 ---
 apiVersion: apps/v1
 kind: Deployment

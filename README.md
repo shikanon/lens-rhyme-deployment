@@ -174,6 +174,8 @@ ADMIN_DEFAULT_PASSWORD=random-initial-admin-password
 OPENVIKING_CLIENT_API_KEY=random-openviking-user-or-admin-token
 OPENVIKING_ROOT_API_KEY=random-openviking-root-token
 CODEX_RUNNER_MANAGER_TOKEN=random-codex-runner-token
+CHAT_RUNNER_GRANT_SECRET=random-distinct-runner-grant-signing-secret
+CODEX_AUTH_SECRET_MASTER_KEY=url-safe-base64-of-32-random-bytes
 ```
 
 `OPENVIKING_CLIENT_API_KEY` is used by the backend for tenant-scoped data APIs
@@ -184,14 +186,14 @@ in `api_key` mode.
 Optional bootstrap values:
 
 ```bash
-OPENAI_API_KEY=sk-...
 OPENVIKING_API_KEY=volcengine-ark-key
 ```
 
-`OPENAI_API_KEY` is only needed when you want the backend and runner-manager to
-auto-create Codex login state at startup. Super Admins can also upload
-`auth.json` from the Admin Platform Configuration page. `OPENVIKING_API_KEY` is
-only needed for the bundled OpenViking sidecar's VLM/embedding calls.
+Codex provider credentials are write-only Admin authentication profiles,
+encrypted with `CODEX_AUTH_SECRET_MASTER_KEY`, validated in the isolated SDK
+runner, and activated explicitly. Shared `auth.json` startup/login is disabled
+by default. `OPENVIKING_API_KEY` is only needed for the bundled OpenViking
+sidecar's VLM/embedding calls.
 
 Configure the rest in Admin Platform Configuration:
 
