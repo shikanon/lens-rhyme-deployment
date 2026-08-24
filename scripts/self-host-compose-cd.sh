@@ -485,7 +485,7 @@ run_local() {
   "${compose[@]}" config >/tmp/lens-rhyme-selfhost-compose-config.yml
 
   echo "Pulling Compose sidecars..."
-  for service in openviking postgres nginx; do
+  for service in postgres nginx; do
     pull_service "$service"
   done
 

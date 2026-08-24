@@ -57,7 +57,7 @@ What it does:
    checks `http://127.0.0.1/` plus `http://127.0.0.1/docs/`.
 
 Image pulls, including Compose sidecars such as Postgres, Nginx, and
-OpenViking, are executed service-by-service with retries so transient registry
+PostgreSQL/pgvector, are executed service-by-service with retries so transient registry
 auth or network resets do not fail the whole rollout immediately.
 
 For password-based temporary access:
@@ -104,7 +104,7 @@ have `/root/lens-rhyme-deployment` or a `.env` file:
 ```bash
 SSHPASS='***' \
 ARK_API_KEY='***' \
-OPENVIKING_API_KEY='***' \
+EMBEDDING_API_KEY='***' \
 LLM_API_KEY='***' \
 IMAGE_API_KEY='***' \
 VIDEO_API_KEY='***' \
