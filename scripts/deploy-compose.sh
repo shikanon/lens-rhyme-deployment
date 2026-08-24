@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
 source "${SCRIPT_DIR}/lib/deployment-region.sh"
+source "${SCRIPT_DIR}/lib/deployment-observability.sh"
 
 HOST=""
 DEPLOY_DIR="/root/lens-rhyme-deployment"
@@ -28,6 +29,9 @@ PRERELEASE_GC_MAX_AGE_HOURS="${PRERELEASE_GC_MAX_AGE_HOURS:-24}"
 PRERELEASE_LOCK_WAIT_SECONDS="${PRERELEASE_LOCK_WAIT_SECONDS:-0}"
 SSH_BIN="${SSH_BIN:-ssh}"
 SSH_OPTS=()
+DEPLOYMENT_ID="${DEPLOYMENT_ID:-}"
+DEPLOYMENT_LOG_DIR="${DEPLOYMENT_LOG_DIR:-}"
+DIAGNOSTIC_LOG_TAIL="${DIAGNOSTIC_LOG_TAIL:-300}"
 
 usage() {
   cat <<'EOF'
@@ -54,6 +58,9 @@ Options:
   --prerelease-report-dir <path> Report output directory.
   --prerelease-gc-max-age-hours <hours> Stale prerelease object cleanup threshold.
   --prerelease-lock-wait-seconds <seconds> Advisory lock wait before failing.
+  --deployment-id <id>        Caller-provided deployment ID. Defaults to an auto-generated ID.
+  --deployment-log-dir <path> Remote log directory. Defaults to <deploy-dir>/.deployment-logs.
+  --diagnostic-log-tail <n>   Container log lines collected on failure. Defaults to 300.
   --ssh-option <option>      Extra ssh -o option. Repeat for multiple options.
   -h, --help                 Show this help.
 
@@ -154,6 +161,18 @@ while [[ $# -gt 0 ]]; do
       PRERELEASE_LOCK_WAIT_SECONDS="${2:?missing prerelease lock wait seconds}"
       shift 2
       ;;
+    --deployment-id)
+      DEPLOYMENT_ID="${2:?missing deployment id}"
+      shift 2
+      ;;
+    --deployment-log-dir)
+      DEPLOYMENT_LOG_DIR="${2:?missing deployment log dir}"
+      shift 2
+      ;;
+    --diagnostic-log-tail)
+      DIAGNOSTIC_LOG_TAIL="${2:?missing diagnostic log tail}"
+      shift 2
+      ;;
     --ssh-option)
       SSH_OPTS+=(-o "${2:?missing ssh option}")
       shift 2
@@ -177,6 +196,13 @@ DEPLOY_IMAGE_TAG="$(resolve_image_tag "$DEPLOYMENT_REGION" "$REGISTRY" "$TAG")"
 if [[ -z "$TAG" ]]; then
   echo "--tag is required" >&2
   usage >&2
+  exit 2
+fi
+
+DEPLOYMENT_ID="${DEPLOYMENT_ID:-$(generate_deployment_id)}"
+validate_deployment_id "$DEPLOYMENT_ID"
+if [[ ! "$DIAGNOSTIC_LOG_TAIL" =~ ^[0-9]+$ ]]; then
+  echo "--diagnostic-log-tail must be a non-negative integer." >&2
   exit 2
 fi
 
@@ -210,19 +236,63 @@ printf -v q_prerelease_volcengine_api_key '%q' "$PRERELEASE_VOLCENGINE_API_KEY"
 printf -v q_prerelease_report_dir '%q' "$PRERELEASE_REPORT_DIR"
 printf -v q_prerelease_gc_max_age_hours '%q' "$PRERELEASE_GC_MAX_AGE_HOURS"
 printf -v q_prerelease_lock_wait_seconds '%q' "$PRERELEASE_LOCK_WAIT_SECONDS"
+printf -v q_deployment_id '%q' "$DEPLOYMENT_ID"
+printf -v q_deployment_log_dir '%q' "$DEPLOYMENT_LOG_DIR"
+printf -v q_diagnostic_log_tail '%q' "$DIAGNOSTIC_LOG_TAIL"
+
+echo "Starting deployment ${DEPLOYMENT_ID} on ${HOST}."
 
 "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "$HOST" \
-  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} DEPLOYMENT_REGION=${q_deployment_region} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_image_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} RUN_PRERELEASE_VALIDATION=${q_run_prerelease_validation} PRERELEASE_APP_REPO=${q_prerelease_app_repo} PRERELEASE_ADMIN_BASE_URL=${q_prerelease_admin_base_url} PRERELEASE_FRONTEND_BASE_URL=${q_prerelease_frontend_base_url} PRERELEASE_API_BASE_URL=${q_prerelease_api_base_url} PRERELEASE_DATABASE_URL=${q_prerelease_database_url} PRERELEASE_VOLCENGINE_API_KEY=${q_prerelease_volcengine_api_key} PRERELEASE_REPORT_DIR=${q_prerelease_report_dir} PRERELEASE_GC_MAX_AGE_HOURS=${q_prerelease_gc_max_age_hours} PRERELEASE_LOCK_WAIT_SECONDS=${q_prerelease_lock_wait_seconds} bash -s" <<'REMOTE_SCRIPT'
-set -euo pipefail
+  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} DEPLOYMENT_REGION=${q_deployment_region} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_image_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} RUN_PRERELEASE_VALIDATION=${q_run_prerelease_validation} PRERELEASE_APP_REPO=${q_prerelease_app_repo} PRERELEASE_ADMIN_BASE_URL=${q_prerelease_admin_base_url} PRERELEASE_FRONTEND_BASE_URL=${q_prerelease_frontend_base_url} PRERELEASE_API_BASE_URL=${q_prerelease_api_base_url} PRERELEASE_DATABASE_URL=${q_prerelease_database_url} PRERELEASE_VOLCENGINE_API_KEY=${q_prerelease_volcengine_api_key} PRERELEASE_REPORT_DIR=${q_prerelease_report_dir} PRERELEASE_GC_MAX_AGE_HOURS=${q_prerelease_gc_max_age_hours} PRERELEASE_LOCK_WAIT_SECONDS=${q_prerelease_lock_wait_seconds} DEPLOYMENT_ID=${q_deployment_id} DEPLOYMENT_LOG_DIR=${q_deployment_log_dir} DIAGNOSTIC_LOG_TAIL=${q_diagnostic_log_tail} bash -s" <<'REMOTE_SCRIPT'
+set -Eeuo pipefail
 
 cd "$DEPLOY_DIR"
+source scripts/lib/deployment-observability.sh
 
+compose=()
+deployment_observability_init registry "$IMAGE_TAG" "$COMPOSE_PROJECT_NAME"
+
+collect_failure_diagnostics() {
+  if [[ ${#compose[@]} -eq 0 ]]; then
+    echo "Compose command was not initialized; container diagnostics are unavailable."
+    return 0
+  fi
+
+  echo "===== Compose service state ====="
+  "${compose[@]}" ps --all || true
+  echo "===== Recent Compose logs (tail=${DIAGNOSTIC_LOG_TAIL}) ====="
+  "${compose[@]}" logs --no-color --timestamps --tail "$DIAGNOSTIC_LOG_TAIL" || true
+  echo "===== Docker disk usage ====="
+  docker system df || true
+}
+
+finish_deployment() {
+  local exit_code=$?
+  local failed_phase="$DEPLOYMENT_PHASE"
+  trap - EXIT
+  set +e
+  if [[ "$exit_code" -eq 0 ]]; then
+    deployment_mark_finished succeeded 0 completed
+    echo "Deployment ${DEPLOYMENT_ID} succeeded."
+  else
+    echo "Deployment ${DEPLOYMENT_ID} failed in phase ${failed_phase} with exit code ${exit_code}." >&2
+    collect_failure_diagnostics
+    deployment_mark_finished failed "$exit_code" "$failed_phase"
+  fi
+  echo "Deployment status: ${DEPLOYMENT_STATUS_FILE}"
+  echo "Deployment log: ${DEPLOYMENT_LOG_FILE}"
+  exit "$exit_code"
+}
+trap finish_deployment EXIT
+
+deployment_set_phase preflight
 if [[ ! -f ".env" ]]; then
   echo "Missing ${DEPLOY_DIR}/.env. Copy .env.example and set production secrets first." >&2
   exit 1
 fi
 
 if [[ -n "$DEPLOYMENT_REF" ]]; then
+  deployment_set_phase deployment_checkout
   if [[ "$ALLOW_DIRTY" != "true" ]] && [[ -n "$(git status --porcelain)" ]]; then
     echo "Remote deployment repo has local changes; refusing to switch refs." >&2
     git status --short >&2
@@ -242,6 +312,7 @@ EOF
 
 compose=(docker compose --env-file .env --env-file .release.env -f "$COMPOSE_FILE")
 
+deployment_set_phase compose_validation
 echo "Validating Compose config for image tag ${IMAGE_TAG}..."
 "${compose[@]}" config >/tmp/lens-rhyme-compose-config.yml
 
@@ -266,11 +337,13 @@ pull_service() {
 }
 
 echo "Pulling Compose images for tag ${IMAGE_TAG}..."
+deployment_set_phase image_pull
 for service in backend-init frontend admin-frontend docs-site content-frontend; do
   pull_service "$service"
 done
 
 echo "Starting LensRhyme Compose stack..."
+deployment_set_phase compose_up
 "${compose[@]}" up -d --pull missing --quiet-pull
 
 echo "Compose services:"
@@ -292,6 +365,7 @@ check_url() {
   return 1
 }
 
+deployment_set_phase health_checks
 check_url "${SMOKE_TEST_BASE_URL%/}/"
 check_url "${SMOKE_TEST_BASE_URL%/}/docs/"
 
@@ -314,6 +388,7 @@ check_get_url() {
 check_get_url "http://127.0.0.1/api/v1/admin/landing-config"
 
 if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
+  deployment_set_phase smoke_test
   if ! command -v python3 >/dev/null 2>&1; then
     echo "python3 is required on the remote host to run scripts/smoke-test-compose.py." >&2
     exit 1
@@ -324,6 +399,7 @@ if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
 fi
 
 if [[ "$RUN_PRERELEASE_VALIDATION" == "true" ]]; then
+  deployment_set_phase prerelease_validation
   if [[ -z "$PRERELEASE_FRONTEND_BASE_URL" ]]; then
     PRERELEASE_FRONTEND_BASE_URL="$SMOKE_TEST_BASE_URL"
   fi

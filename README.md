@@ -97,6 +97,38 @@ permission-restricted `.env` with randomized internal secrets, optionally seeds
 Admin Platform Configuration defaults, then delegates the actual Compose rollout
 to `scripts/deploy-compose.sh`.
 
+## Deployment Status And Logs
+
+Compose CD scripts print a deployment ID before connecting to the target host.
+They stream output to the caller and persist a permission-restricted status JSON
+and complete log under `<deploy-dir>/.deployment-logs/`. A caller may provide its
+own correlation ID with `--deployment-id`; otherwise the script generates one.
+
+Inspect a completed deployment or follow one that is still running:
+
+```bash
+scripts/deployment-log.sh \
+  --host root@<server-ip> \
+  --deployment-id deploy-20260825T120000Z-123-456
+
+scripts/deployment-log.sh \
+  --host root@<server-ip> \
+  --deployment-id deploy-20260825T120000Z-123-456 \
+  --follow
+```
+
+Use `--status-only` when an API or CI runner only needs the JSON state. The
+status records `running`, `succeeded`, or `failed`, the current/failing phase,
+timestamps, exit code, deployment kind, target, project, and log path. Failed
+deployments append Compose service state, recent timestamped container logs,
+and Docker disk usage while preserving the original non-zero exit code.
+
+Logs and status files are mode `600` inside a mode `700` directory because
+container output can contain sensitive application data. Configure host log
+rotation or periodically archive/delete old files according to the environment's
+retention policy. Override the location with `--deployment-log-dir` and adjust
+failure collection with `--diagnostic-log-tail`.
+
 ## Prerelease Validation Gate
 
 Use `scripts/prerelease-validation-compose.sh` to run the prerelease gate that

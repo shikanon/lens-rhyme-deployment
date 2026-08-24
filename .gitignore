@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .release.env
+.deployment-logs/
 
 # macOS
 .DS_Store
