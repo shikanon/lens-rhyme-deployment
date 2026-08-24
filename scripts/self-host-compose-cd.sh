@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
+source "${SCRIPT_DIR}/lib/deployment-observability.sh"
 
 HOST=""
 RUN_LOCAL=false
@@ -37,6 +38,10 @@ ALLOW_DIRTY_APP=false
 ALLOW_DIRTY_DEPLOY=false
 SSH_BIN="${SSH_BIN:-ssh}"
 SSH_OPTS=()
+DEPLOYMENT_ID="${DEPLOYMENT_ID:-}"
+DEPLOYMENT_LOG_DIR="${DEPLOYMENT_LOG_DIR:-}"
+DIAGNOSTIC_LOG_TAIL="${DIAGNOSTIC_LOG_TAIL:-300}"
+compose=()
 
 usage() {
   cat <<'EOF'
@@ -75,6 +80,9 @@ Options:
   --prerelease-gc-max-age-hours <hours> Stale prerelease object cleanup threshold.
   --prerelease-lock-wait-seconds <seconds> Advisory lock wait before failing.
   --skip-route-checks            Skip local HTTP route checks.
+  --deployment-id <id>           Caller-provided deployment ID. Defaults to an auto-generated ID.
+  --deployment-log-dir <path>    Log directory. Defaults to <deploy-dir>/.deployment-logs.
+  --diagnostic-log-tail <n>      Container log lines collected on failure. Defaults to 300.
   --ssh-option <option>          Extra ssh -o option. Repeat for multiple options.
   -h, --help                     Show this help.
 
@@ -207,6 +215,18 @@ while [[ $# -gt 0 ]]; do
       SKIP_ROUTE_CHECKS=true
       shift
       ;;
+    --deployment-id)
+      DEPLOYMENT_ID="${2:?missing deployment id}"
+      shift 2
+      ;;
+    --deployment-log-dir)
+      DEPLOYMENT_LOG_DIR="${2:?missing deployment log dir}"
+      shift 2
+      ;;
+    --diagnostic-log-tail)
+      DIAGNOSTIC_LOG_TAIL="${2:?missing diagnostic log tail}"
+      shift 2
+      ;;
     --ssh-option)
       SSH_OPTS+=(-o "${2:?missing ssh option}")
       shift 2
@@ -254,6 +274,8 @@ run_remote() {
     --image-registry "$IMAGE_REGISTRY"
     --npm-registry "$NPM_REGISTRY"
     --pip-index-url "$PIP_INDEX_URL"
+    --deployment-id "$DEPLOYMENT_ID"
+    --diagnostic-log-tail "$DIAGNOSTIC_LOG_TAIL"
   )
 
   if [[ -n "$IMAGE_TAG" ]]; then
@@ -264,6 +286,9 @@ run_remote() {
   fi
   if [[ -n "$ENV_SOURCE" ]]; then
     remote_args+=(--env-source "$ENV_SOURCE")
+  fi
+  if [[ -n "$DEPLOYMENT_LOG_DIR" ]]; then
+    remote_args+=(--deployment-log-dir "$DEPLOYMENT_LOG_DIR")
   fi
   if [[ "$ALLOW_DIRTY_APP" == "true" ]]; then
     remote_args+=(--allow-dirty-app)
@@ -447,10 +472,46 @@ check_url() {
   return 1
 }
 
+collect_failure_diagnostics() {
+  if [[ ${#compose[@]} -eq 0 ]]; then
+    echo "Compose command was not initialized; container diagnostics are unavailable."
+    return 0
+  fi
+
+  echo "===== Compose service state ====="
+  "${compose[@]}" ps --all || true
+  echo "===== Recent Compose logs (tail=${DIAGNOSTIC_LOG_TAIL}) ====="
+  "${compose[@]}" logs --no-color --timestamps --tail "$DIAGNOSTIC_LOG_TAIL" || true
+  echo "===== Docker disk usage ====="
+  docker system df || true
+}
+
+finish_deployment() {
+  local exit_code=$?
+  local failed_phase="$DEPLOYMENT_PHASE"
+  trap - EXIT
+  set +e
+  if [[ "$exit_code" -eq 0 ]]; then
+    deployment_mark_finished succeeded 0 completed
+    echo "Deployment ${DEPLOYMENT_ID} succeeded."
+  else
+    echo "Deployment ${DEPLOYMENT_ID} failed in phase ${failed_phase} with exit code ${exit_code}." >&2
+    collect_failure_diagnostics
+    deployment_mark_finished failed "$exit_code" "$failed_phase"
+  fi
+  echo "Deployment status: ${DEPLOYMENT_STATUS_FILE}"
+  echo "Deployment log: ${DEPLOYMENT_LOG_FILE}"
+  exit "$exit_code"
+}
+
 run_local() {
   DEPLOY_DIR="$(cd "$DEPLOY_DIR" && pwd)"
   cd "$DEPLOY_DIR"
 
+  deployment_observability_init self_host "$APP_REF" "${COMPOSE_PROJECT_NAME:-lens-rhyme}"
+  trap finish_deployment EXIT
+
+  deployment_set_phase preflight
   ensure_dotenv
   ensure_app_repo
 
@@ -464,6 +525,7 @@ run_local() {
 
   echo "Deploying app ref ${APP_REF} (${target_commit}) as ${IMAGE_TAG}."
 
+  deployment_set_phase image_build
   build_image lens-rhyme-backend backend --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}"
   build_image lens-rhyme-codex-runner backend --file "${APP_DIR}/backend/Dockerfile.runner" --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}"
   build_image lens-rhyme-frontend . --file "${APP_DIR}/frontend/Dockerfile.selfhost" --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
@@ -481,26 +543,31 @@ run_local() {
 
   compose=(docker compose --env-file .env --env-file .release.env -f "$COMPOSE_FILE")
 
+  deployment_set_phase compose_validation
   echo "Validating Compose config for local image tag ${IMAGE_TAG}..."
   "${compose[@]}" config >/tmp/lens-rhyme-selfhost-compose-config.yml
 
   echo "Pulling Compose sidecars..."
+  deployment_set_phase image_pull
   for service in postgres nginx; do
     pull_service "$service"
   done
 
   echo "Starting LensRhyme Compose stack from local images..."
+  deployment_set_phase compose_up
   "${compose[@]}" up -d --pull missing --quiet-pull
 
   echo "Compose services:"
   "${compose[@]}" ps
 
   if [[ "$SKIP_ROUTE_CHECKS" != "true" ]]; then
+    deployment_set_phase health_checks
     check_url "${SMOKE_TEST_BASE_URL%/}/"
     check_url "${SMOKE_TEST_BASE_URL%/}/docs/"
   fi
 
   if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
+    deployment_set_phase smoke_test
     if ! command -v python3 >/dev/null 2>&1; then
       echo "python3 is required on the host to run scripts/smoke-test-compose.py." >&2
       exit 1
@@ -509,6 +576,7 @@ run_local() {
   fi
 
   if [[ "$RUN_PRERELEASE_VALIDATION" == "true" ]]; then
+    deployment_set_phase prerelease_validation
     local prerelease_app_repo="${PRERELEASE_APP_REPO:-$APP_DIR}"
     if [[ -z "$PRERELEASE_FRONTEND_BASE_URL" ]]; then
       PRERELEASE_FRONTEND_BASE_URL="$SMOKE_TEST_BASE_URL"
@@ -541,6 +609,14 @@ if [[ -n "$HOST" && "$RUN_LOCAL" == "true" ]]; then
   echo "--host and --local cannot be used together." >&2
   exit 2
 fi
+
+DEPLOYMENT_ID="${DEPLOYMENT_ID:-$(generate_deployment_id)}"
+validate_deployment_id "$DEPLOYMENT_ID"
+if [[ ! "$DIAGNOSTIC_LOG_TAIL" =~ ^[0-9]+$ ]]; then
+  echo "--diagnostic-log-tail must be a non-negative integer." >&2
+  exit 2
+fi
+echo "Starting deployment ${DEPLOYMENT_ID}."
 
 if [[ -n "$HOST" ]]; then
   run_remote

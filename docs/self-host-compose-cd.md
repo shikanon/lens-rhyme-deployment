@@ -83,6 +83,24 @@ This still updates the same Compose project by default when the compose file
 path is `compose/docker-compose.yml`, but it leaves the existing Git working
 trees untouched.
 
+## Follow Deployment Status And Logs
+
+The command prints its deployment ID immediately and streams build/deploy output
+to the invoking terminal. The same output and a machine-readable status JSON are
+stored on the target host under `<deploy-dir>/.deployment-logs/`.
+
+```bash
+scripts/deployment-log.sh \
+  --host root@<server-ip> \
+  --deployment-id <id-from-deploy-output> \
+  --follow
+```
+
+On failure, the log includes Compose service state, the last 300 timestamped log
+lines per service, and Docker disk usage. Use `--deployment-id <request-id>` to
+correlate an API request with a deployment and `--status-only` on the log command
+to retrieve only JSON status.
+
 ## Local Host Mode
 
 When already SSHed into the target server:

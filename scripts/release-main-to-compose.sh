@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
 source "${SCRIPT_DIR}/lib/deployment-region.sh"
+source "${SCRIPT_DIR}/lib/deployment-observability.sh"
 
 APP_REPO="${APP_REPO:-${REPO_ROOT}/../lens-rhyme}"
 APP_REMOTE="${APP_REMOTE:-origin}"
@@ -33,6 +34,9 @@ PRERELEASE_REPORT_DIR="${PRERELEASE_REPORT_DIR:-}"
 PRERELEASE_GC_MAX_AGE_HOURS="${PRERELEASE_GC_MAX_AGE_HOURS:-24}"
 PRERELEASE_LOCK_WAIT_SECONDS="${PRERELEASE_LOCK_WAIT_SECONDS:-0}"
 SSH_ARGS=()
+DEPLOYMENT_ID="${DEPLOYMENT_ID:-}"
+DEPLOYMENT_LOG_DIR="${DEPLOYMENT_LOG_DIR:-}"
+DIAGNOSTIC_LOG_TAIL="${DIAGNOSTIC_LOG_TAIL:-300}"
 
 usage() {
   cat <<'EOF'
@@ -65,6 +69,9 @@ Options:
   --prerelease-report-dir <path> Report output directory.
   --prerelease-gc-max-age-hours <hours> Stale prerelease object cleanup threshold.
   --prerelease-lock-wait-seconds <seconds> Advisory lock wait before failing.
+  --deployment-id <id>        Caller-provided deployment ID. Defaults to an auto-generated ID.
+  --deployment-log-dir <path> Remote log directory. Defaults to <deploy-dir>/.deployment-logs.
+  --diagnostic-log-tail <n>   Container log lines collected on failure. Defaults to 300.
   --ssh-option <option>      Extra ssh -o option passed through to deploy-compose.sh.
   -h, --help                 Show this help.
 
@@ -185,6 +192,18 @@ while [[ $# -gt 0 ]]; do
       PRERELEASE_LOCK_WAIT_SECONDS="${2:?missing prerelease lock wait seconds}"
       shift 2
       ;;
+    --deployment-id)
+      DEPLOYMENT_ID="${2:?missing deployment id}"
+      shift 2
+      ;;
+    --deployment-log-dir)
+      DEPLOYMENT_LOG_DIR="${2:?missing deployment log dir}"
+      shift 2
+      ;;
+    --diagnostic-log-tail)
+      DIAGNOSTIC_LOG_TAIL="${2:?missing diagnostic log tail}"
+      shift 2
+      ;;
     --ssh-option)
       SSH_ARGS+=(--ssh-option "${2:?missing ssh option}")
       shift 2
@@ -200,6 +219,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "$DEPLOYMENT_ID" ]]; then
+  validate_deployment_id "$DEPLOYMENT_ID"
+fi
+if [[ ! "$DIAGNOSTIC_LOG_TAIL" =~ ^[0-9]+$ ]]; then
+  echo "--diagnostic-log-tail must be a non-negative integer." >&2
+  exit 2
+fi
 
 DEPLOYMENT_REGION="$(normalize_deployment_region "$DEPLOYMENT_REGION")"
 REGISTRY="$(resolve_image_registry "$DEPLOYMENT_REGION" "$REGISTRY")"
@@ -257,7 +284,14 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
     --region "$DEPLOYMENT_REGION"
     --registry "$REGISTRY"
     --tag "$TAG"
+    --diagnostic-log-tail "$DIAGNOSTIC_LOG_TAIL"
   )
+  if [[ -n "$DEPLOYMENT_ID" ]]; then
+    deploy_args+=(--deployment-id "$DEPLOYMENT_ID")
+  fi
+  if [[ -n "$DEPLOYMENT_LOG_DIR" ]]; then
+    deploy_args+=(--deployment-log-dir "$DEPLOYMENT_LOG_DIR")
+  fi
 
   if [[ -n "$DEPLOYMENT_REF" ]]; then
     deploy_args+=(--deployment-ref "$DEPLOYMENT_REF")
