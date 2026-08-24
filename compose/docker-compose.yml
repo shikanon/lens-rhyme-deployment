@@ -35,9 +35,7 @@ services:
       DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
       BACKEND_DATA_PATH: /app/data
       BACKEND_OUTPUTS_PATH: /app/outputs
-      OPENVIKING_URL: http://openviking:1933
-      OPENVIKING_AUTH_MODE: api_key
-      OPENVIKING_CLIENT_API_KEY: ${OPENVIKING_CLIENT_API_KEY:-}
+      MEMORY_SEMANTIC_SEARCH_ENABLED: "true"
       ADMIN_DEFAULT_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin123}
       CODEX_AUTH_SECRET_MASTER_KEY: ${CODEX_AUTH_SECRET_MASTER_KEY:-}
@@ -78,8 +76,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      openviking:
-        condition: service_started
       codex-runner-manager:
         condition: service_healthy
     command: ["python", "-m", "scripts.server", "start", "--host", "0.0.0.0", "--port", "8000"]
@@ -129,69 +125,8 @@ services:
       start_period: 20s
     restart: always
 
-  openviking:
-    image: ghcr.io/volcengine/openviking:latest
-    environment:
-      OPENVIKING_API_BASE: https://ark.cn-beijing.volces.com/api/v3
-      OPENVIKING_API_KEY: ${OPENVIKING_API_KEY:-}
-      OPENVIKING_PROVIDER: volcengine
-      OPENVIKING_VLM_MODEL: doubao-seed-2-0-pro-260215
-      OPENVIKING_EMBEDDING_MODEL: doubao-embedding-vision-251215
-      OPENVIKING_EMBEDDING_DIMENSION: "1024"
-      OPENVIKING_EMBEDDING_INPUT: multimodal
-      OPENVIKING_ROOT_API_KEY: ${OPENVIKING_ROOT_API_KEY:-lens-rhyme-openviking-local-root-key}
-    ports:
-      - "1933:1933"
-    volumes:
-      - openviking_data:/data/openviking
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        mkdir -p /root/.openviking /data/openviking/workspace
-        python - <<'PY'
-        import json
-        import os
-
-        config = {
-            "server": {
-                "host": "0.0.0.0",
-                "port": 1933,
-                "auth_mode": "api_key",
-                "root_api_key": os.getenv("OPENVIKING_ROOT_API_KEY", ""),
-            },
-            "storage": {"workspace": "/data/openviking/workspace"},
-            "log": {"level": "INFO", "output": "stdout"},
-            "embedding": {
-                "dense": {
-                    "api_base": os.getenv("OPENVIKING_API_BASE", "https://ark.cn-beijing.volces.com/api/v3"),
-                    "api_key": os.getenv("OPENVIKING_API_KEY", ""),
-                    "provider": os.getenv("OPENVIKING_PROVIDER", "volcengine"),
-                    "dimension": int(os.getenv("OPENVIKING_EMBEDDING_DIMENSION", "1024")),
-                    "model": os.getenv("OPENVIKING_EMBEDDING_MODEL", "doubao-embedding-vision-251215"),
-                    "input": os.getenv("OPENVIKING_EMBEDDING_INPUT", "multimodal"),
-                },
-                "max_concurrent": 10,
-            },
-            "vlm": {
-                "api_base": os.getenv("OPENVIKING_API_BASE", "https://ark.cn-beijing.volces.com/api/v3"),
-                "api_key": os.getenv("OPENVIKING_API_KEY", ""),
-                "provider": os.getenv("OPENVIKING_PROVIDER", "volcengine"),
-                "model": os.getenv("OPENVIKING_VLM_MODEL", "doubao-seed-2-0-pro-260215"),
-                "max_retries": 2,
-                "max_concurrent": 100,
-            },
-        }
-
-        with open("/root/.openviking/ov.conf", "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-        PY
-        exec openviking-server --config /root/.openviking/ov.conf --host 0.0.0.0 --port 1933
-    restart: always
-
   postgres:
-    image: postgres:16.2
+    image: pgvector/pgvector:0.8.6-pg16
     environment:
       POSTGRES_DB: lens_rhyme
       POSTGRES_USER: lens_rhyme
@@ -257,7 +192,6 @@ volumes:
   backend_outputs:
   codex_runner_data:
   postgres_data:
-  openviking_data:
 
 configs:
   nginx_config:

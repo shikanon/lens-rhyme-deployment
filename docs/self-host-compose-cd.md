@@ -40,7 +40,7 @@ What it does on the target server:
    - `lens-rhyme-selfhost/lens-rhyme-docs-site:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-content-frontend:<tag>`
 5. Writes `.release.env` with the local image namespace and tag.
-6. Pulls only sidecar images such as Postgres, Nginx, and OpenViking.
+6. Pulls only sidecar images such as PostgreSQL/pgvector and Nginx.
 7. Runs Docker Compose and checks `http://127.0.0.1/` plus
    `http://127.0.0.1/docs/` by default.
 

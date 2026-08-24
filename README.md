@@ -79,7 +79,7 @@ For a brand-new server that does not yet have this deployment repository or a
 `.env` file, bootstrap it first:
 
 ```bash
-ARK_API_KEY=... OPENVIKING_API_KEY=... \
+ARK_API_KEY=... EMBEDDING_API_KEY=... \
 scripts/bootstrap-compose-host.sh \
   --tag deploy-20260622120000-7cf974f
 ```
@@ -171,29 +171,22 @@ the bootstrap and internal-service secrets:
 ```bash
 SECRET_KEY=random-backend-jwt-secret
 ADMIN_DEFAULT_PASSWORD=random-initial-admin-password
-OPENVIKING_CLIENT_API_KEY=random-openviking-user-or-admin-token
-OPENVIKING_ROOT_API_KEY=random-openviking-root-token
 CODEX_RUNNER_MANAGER_TOKEN=random-codex-runner-token
 CHAT_RUNNER_GRANT_SECRET=random-distinct-runner-grant-signing-secret
 CODEX_AUTH_SECRET_MASTER_KEY=url-safe-base64-of-32-random-bytes
 ```
 
-`OPENVIKING_CLIENT_API_KEY` is used by the backend for tenant-scoped data APIs
-and must be a non-root user/admin key. Do not reuse `OPENVIKING_ROOT_API_KEY` as
-the backend client key; OpenViking rejects root keys for tenant-scoped data APIs
-in `api_key` mode.
-
 Optional bootstrap values:
 
 ```bash
-OPENVIKING_API_KEY=volcengine-ark-key
+EMBEDDING_API_KEY=volcengine-ark-key
 ```
 
 Codex provider credentials are write-only Admin authentication profiles,
 encrypted with `CODEX_AUTH_SECRET_MASTER_KEY`, validated in the isolated SDK
 runner, and activated explicitly. Shared `auth.json` startup/login is disabled
-by default. `OPENVIKING_API_KEY` is only needed for the bundled OpenViking
-sidecar's VLM/embedding calls.
+by default. `EMBEDDING_API_KEY` is used by PostgreSQL-backed semantic indexing
+when it should not share the general Ark credential.
 
 Configure the rest in Admin Platform Configuration:
 
