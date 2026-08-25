@@ -1,0 +1,66 @@
+name: Deployment CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deployment-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Check Bash syntax
+        run: bash -n scripts/*.sh scripts/lib/*.sh
+
+      - name: Run Shell regression tests
+        run: |
+          set -euo pipefail
+          for test_script in scripts/test-*.sh; do
+            echo "Running ${test_script}"
+            bash "$test_script"
+          done
+
+  python:
+    name: Python unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s scripts -p 'test_*.py'
+
+  compose:
+    name: Compose configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Validate Compose manifests
+        run: |
+          set -euo pipefail
+          for compose_file in compose/docker-compose*.yml; do
+            echo "Validating ${compose_file}"
+            docker compose --env-file .env.example -f "$compose_file" config --quiet
+          done

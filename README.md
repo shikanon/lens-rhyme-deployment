@@ -1,5 +1,7 @@
 # LensRhyme Deployment
 
+[![Deployment CI](https://github.com/shikanon/lens-rhyme-deployment/actions/workflows/deployment-ci.yml/badge.svg)](https://github.com/shikanon/lens-rhyme-deployment/actions/workflows/deployment-ci.yml)
+
 This repository contains deployment configuration for LensRhyme.
 
 Application images are built by the LensRhyme CI/CD pipeline and published to
@@ -41,6 +43,14 @@ precedence over the region default.
 
 Add new deployment formats under a dedicated subdirectory instead of placing
 deployment files at the repository root.
+
+## Continuous Integration
+
+Pull requests automatically validate Bash syntax and regression tests, Python
+unit tests, and every Docker Compose manifest. These checks are required on
+`main` and can be used with GitHub automatic merge after review. See
+[`docs/ci-and-auto-merge.md`](docs/ci-and-auto-merge.md) for check names, local
+commands, branch-protection behavior, and the auto-merge workflow.
 
 ## Docker Compose
 
