@@ -12,6 +12,7 @@ COMPOSE_FILE="compose/docker-compose.yml"
 DEPLOYMENT_REGION="${DEPLOYMENT_REGION:-overseas}"
 REGISTRY="${IMAGE_REGISTRY:-}"
 TAG="${IMAGE_TAG:-}"
+SOURCE_REVISION="${SOURCE_REVISION:-}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-lens-rhyme}"
 DEPLOYMENT_REF=""
 ALLOW_DIRTY=false
@@ -43,6 +44,7 @@ Options:
   --compose-file <path>      Compose file relative to --dir. Defaults to compose/docker-compose.yml.
   --region <overseas|china> Deployment mode. Defaults to overseas.
   --registry <registry/ns>   Override the registry selected by --region.
+  --source-revision <sha>    Full application commit SHA for release traceability.
   --project-name <name>      Compose project name. Defaults to lens-rhyme.
   --deployment-ref <ref>     Optional deployment repo branch/tag to fetch and check out before deploy.
   --allow-dirty              Allow checkout even when the remote deployment repo has local changes.
@@ -99,6 +101,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag)
       TAG="${2:?missing tag}"
+      shift 2
+      ;;
+    --source-revision)
+      SOURCE_REVISION="${2:?missing source revision}"
       shift 2
       ;;
     --project-name)
@@ -198,6 +204,10 @@ if [[ -z "$TAG" ]]; then
   usage >&2
   exit 2
 fi
+if [[ -n "$SOURCE_REVISION" && ! "$SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "--source-revision must be a full lowercase commit SHA." >&2
+  exit 2
+fi
 
 DEPLOYMENT_ID="${DEPLOYMENT_ID:-$(generate_deployment_id)}"
 validate_deployment_id "$DEPLOYMENT_ID"
@@ -221,6 +231,7 @@ printf -v q_registry '%q' "$REGISTRY"
 printf -v q_image_tag '%q' "$DEPLOY_IMAGE_TAG"
 printf -v q_deployment_region '%q' "$DEPLOYMENT_REGION"
 printf -v q_tag '%q' "$TAG"
+printf -v q_source_revision '%q' "$SOURCE_REVISION"
 printf -v q_project '%q' "$COMPOSE_PROJECT_NAME"
 printf -v q_deployment_ref '%q' "$DEPLOYMENT_REF"
 printf -v q_allow_dirty '%q' "$ALLOW_DIRTY"
@@ -243,7 +254,7 @@ printf -v q_diagnostic_log_tail '%q' "$DIAGNOSTIC_LOG_TAIL"
 echo "Starting deployment ${DEPLOYMENT_ID} on ${HOST}."
 
 "${SSH_CMD[@]}" "${SSH_OPTS[@]}" "$HOST" \
-  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} DEPLOYMENT_REGION=${q_deployment_region} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_image_tag} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} RUN_PRERELEASE_VALIDATION=${q_run_prerelease_validation} PRERELEASE_APP_REPO=${q_prerelease_app_repo} PRERELEASE_ADMIN_BASE_URL=${q_prerelease_admin_base_url} PRERELEASE_FRONTEND_BASE_URL=${q_prerelease_frontend_base_url} PRERELEASE_API_BASE_URL=${q_prerelease_api_base_url} PRERELEASE_DATABASE_URL=${q_prerelease_database_url} PRERELEASE_VOLCENGINE_API_KEY=${q_prerelease_volcengine_api_key} PRERELEASE_REPORT_DIR=${q_prerelease_report_dir} PRERELEASE_GC_MAX_AGE_HOURS=${q_prerelease_gc_max_age_hours} PRERELEASE_LOCK_WAIT_SECONDS=${q_prerelease_lock_wait_seconds} DEPLOYMENT_ID=${q_deployment_id} DEPLOYMENT_LOG_DIR=${q_deployment_log_dir} DIAGNOSTIC_LOG_TAIL=${q_diagnostic_log_tail} bash -s" <<'REMOTE_SCRIPT'
+  "DEPLOY_DIR=${q_deploy_dir} COMPOSE_FILE=${q_compose_file} DEPLOYMENT_REGION=${q_deployment_region} IMAGE_REGISTRY=${q_registry} IMAGE_TAG=${q_image_tag} SOURCE_REVISION=${q_source_revision} COMPOSE_PROJECT_NAME=${q_project} DEPLOYMENT_REF=${q_deployment_ref} ALLOW_DIRTY=${q_allow_dirty} RUN_SMOKE_TEST=${q_run_smoke_test} SMOKE_TEST_BASE_URL=${q_smoke_test_base_url} RUN_PRERELEASE_VALIDATION=${q_run_prerelease_validation} PRERELEASE_APP_REPO=${q_prerelease_app_repo} PRERELEASE_ADMIN_BASE_URL=${q_prerelease_admin_base_url} PRERELEASE_FRONTEND_BASE_URL=${q_prerelease_frontend_base_url} PRERELEASE_API_BASE_URL=${q_prerelease_api_base_url} PRERELEASE_DATABASE_URL=${q_prerelease_database_url} PRERELEASE_VOLCENGINE_API_KEY=${q_prerelease_volcengine_api_key} PRERELEASE_REPORT_DIR=${q_prerelease_report_dir} PRERELEASE_GC_MAX_AGE_HOURS=${q_prerelease_gc_max_age_hours} PRERELEASE_LOCK_WAIT_SECONDS=${q_prerelease_lock_wait_seconds} DEPLOYMENT_ID=${q_deployment_id} DEPLOYMENT_LOG_DIR=${q_deployment_log_dir} DIAGNOSTIC_LOG_TAIL=${q_diagnostic_log_tail} bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 
 cd "$DEPLOY_DIR"
@@ -303,18 +314,49 @@ if [[ -n "$DEPLOYMENT_REF" ]]; then
   git checkout --force FETCH_HEAD
 fi
 
-cat > .release.env <<EOF
-COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
-DEPLOYMENT_REGION=${DEPLOYMENT_REGION}
-IMAGE_REGISTRY=${IMAGE_REGISTRY}
-IMAGE_TAG=${IMAGE_TAG}
-EOF
+source scripts/lib/release-artifact.sh
+
+deployment_set_phase image_resolution
+release_env_tmp="$(mktemp .release.env.XXXXXX)"
+{
+  echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}"
+  echo "DEPLOYMENT_REGION=${DEPLOYMENT_REGION}"
+  echo "IMAGE_REGISTRY=${IMAGE_REGISTRY}"
+  echo "IMAGE_TAG=${IMAGE_TAG}"
+  echo "SOURCE_REVISION=${SOURCE_REVISION}"
+} >"$release_env_tmp"
+resolved_images="$(mktemp .release.images.XXXXXX)"
+allow_unsealed=false
+[[ "$IMAGE_TAG" == git-* ]] || allow_unsealed=true
+resolve_release_images "$IMAGE_REGISTRY" "$IMAGE_TAG" "$resolved_images" "$allow_unsealed"
+cat "$resolved_images" >>"$release_env_tmp"
+rm -f "$resolved_images"
+chmod 600 "$release_env_tmp"
+mv "$release_env_tmp" .release.env
 
 compose=(docker compose --env-file .env --env-file .release.env -f "$COMPOSE_FILE")
 
 deployment_set_phase compose_validation
 echo "Validating Compose config for image tag ${IMAGE_TAG}..."
-"${compose[@]}" config >/tmp/lens-rhyme-compose-config.yml
+compose_config="$(mktemp /tmp/lens-rhyme-compose-config.XXXXXX.yml)"
+"${compose[@]}" config >"$compose_config"
+config_digest="$(sha256sum "$compose_config" | awk '{print $1}')"
+rm -f "$compose_config"
+
+required_services=(backend codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx)
+stack_is_running() {
+  local running service
+  running="$("${compose[@]}" ps --status running --services 2>/dev/null || true)"
+  for service in "${required_services[@]}"; do
+    grep -Fxq "$service" <<<"$running" || return 1
+  done
+}
+
+NOOP_DEPLOY=false
+if [[ -f .deployment-state ]] && grep -Fxq "config_digest=${config_digest}" .deployment-state && stack_is_running; then
+  NOOP_DEPLOY=true
+  echo "Deployment is already converged on the requested digests; skipping pull and compose up."
+fi
 
 pull_service() {
   local service="$1"
@@ -336,15 +378,17 @@ pull_service() {
   done
 }
 
-echo "Pulling Compose images for tag ${IMAGE_TAG}..."
-deployment_set_phase image_pull
-for service in backend-init frontend admin-frontend docs-site content-frontend; do
-  pull_service "$service"
-done
+if [[ "$NOOP_DEPLOY" != true ]]; then
+  echo "Pulling Compose images for artifact ${IMAGE_TAG}..."
+  deployment_set_phase image_pull
+  for service in backend-init codex-runner-manager frontend admin-frontend docs-site content-frontend; do
+    pull_service "$service"
+  done
 
-echo "Starting LensRhyme Compose stack..."
-deployment_set_phase compose_up
-"${compose[@]}" up -d --pull missing --quiet-pull
+  echo "Starting LensRhyme Compose stack..."
+  deployment_set_phase compose_up
+  "${compose[@]}" up -d --pull missing --quiet-pull
+fi
 
 echo "Compose services:"
 "${compose[@]}" ps
@@ -386,6 +430,17 @@ check_get_url() {
 }
 
 check_get_url "http://127.0.0.1/api/v1/admin/landing-config"
+
+state_tmp="$(mktemp .deployment-state.XXXXXX)"
+{
+  echo "config_digest=${config_digest}"
+  echo "source_revision=${SOURCE_REVISION}"
+  echo "artifact_tag=${IMAGE_TAG}"
+  if [[ "$NOOP_DEPLOY" == true ]]; then echo "deployment_result=noop"; else echo "deployment_result=deployed"; fi
+  echo "updated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} >"$state_tmp"
+chmod 600 "$state_tmp"
+mv "$state_tmp" .deployment-state
 
 if [[ "$RUN_SMOKE_TEST" == "true" ]]; then
   deployment_set_phase smoke_test

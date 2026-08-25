@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
 source "${SCRIPT_DIR}/lib/deployment-region.sh"
 source "${SCRIPT_DIR}/lib/deployment-observability.sh"
+source "${SCRIPT_DIR}/lib/release-artifact.sh"
 
 APP_REPO="${APP_REPO:-${REPO_ROOT}/../lens-rhyme}"
 APP_REMOTE="${APP_REMOTE:-origin}"
@@ -15,7 +16,10 @@ DEPLOY_DIR="/root/lens-rhyme-deployment"
 DEPLOYMENT_REGION="${DEPLOYMENT_REGION:-overseas}"
 REGISTRY="${IMAGE_REGISTRY:-}"
 TAG=""
+EXPLICIT_TAG=false
 TAG_PREFIX="deploy"
+BUILD_REVISION=1
+REBUILD_REASON=""
 WAIT_TIMEOUT=2700
 WAIT_INTERVAL=30
 SKIP_WAIT=false
@@ -47,8 +51,10 @@ Options:
   --app-repo <path>          LensRhyme application repo. Defaults to ../lens-rhyme.
   --remote <name>            Application git remote. Defaults to origin.
   --branch <name>            Application branch to release. Defaults to main.
-  --tag <tag>                Reuse or create this tag. Default: deploy-UTC-<shortsha>.
+  --tag <tag>                Explicit artifact tag (legacy escape hatch).
   --tag-prefix <prefix>      Prefix for generated tags. Defaults to deploy.
+  --build-revision <n>       Immutable rebuild revision. Defaults to 1.
+  --rebuild-reason <text>    Required when build revision is greater than 1.
   --region <overseas|china> Deployment mode. Defaults to overseas.
   --registry <registry/ns>   Override the registry selected by --region.
   --dir <path>               Remote deployment repo. Defaults to /root/lens-rhyme-deployment.
@@ -76,8 +82,8 @@ Options:
   -h, --help                 Show this help.
 
 The script releases the latest remote main commit, not local uncommitted work.
-The application repo CD workflow should build and push all five images when the
-release tag is pushed.
+The application repo CD workflow builds only missing components and seals all
+six image digests when a release event tag is pushed.
 
 If --host is omitted, the script uses DEPLOY_HOST or prompts for a server
 host/IP unless --skip-deploy is set. A bare IP or hostname is treated as
@@ -118,10 +124,19 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag)
       TAG="${2:?missing tag}"
+      EXPLICIT_TAG=true
       shift 2
       ;;
     --tag-prefix)
       TAG_PREFIX="${2:?missing tag prefix}"
+      shift 2
+      ;;
+    --build-revision)
+      BUILD_REVISION="${2:?missing build revision}"
+      shift 2
+      ;;
+    --rebuild-reason)
+      REBUILD_REASON="${2:?missing rebuild reason}"
       shift 2
       ;;
     --deployment-ref)
@@ -247,26 +262,38 @@ target_commit="$(git -C "$APP_REPO" rev-parse "$target_ref")"
 short_commit="${target_commit:0:7}"
 
 if [[ -z "$TAG" ]]; then
-  TAG="${TAG_PREFIX}-$(date -u +%Y%m%d%H%M%S)-${short_commit}"
+  TAG="$(canonical_artifact_tag "$target_commit" "$BUILD_REVISION" "$DEPLOYMENT_REGION" "$REGISTRY")"
 fi
 
-if git -C "$APP_REPO" rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-  tag_commit="$(git -C "$APP_REPO" rev-list -n 1 "$TAG")"
-  if [[ "$tag_commit" != "$target_commit" ]]; then
-    echo "Local tag ${TAG} points to ${tag_commit}, expected ${target_commit}." >&2
+if [[ ! "$BUILD_REVISION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--build-revision must be a positive integer." >&2
+  exit 2
+fi
+if (( BUILD_REVISION > 1 )) && [[ -z "$REBUILD_REASON" ]]; then
+  echo "--rebuild-reason is required for an immutable rebuild." >&2
+  exit 2
+fi
+
+manifest_ref="$(release_manifest_ref "$REGISTRY" "$(resolve_image_tag "$DEPLOYMENT_REGION" "$REGISTRY" "$TAG")")"
+probe_result="$(probe_release_image "$manifest_ref")" || probe_status=$?
+probe_status="${probe_status:-0}"
+if [[ "$probe_status" -eq 0 ]]; then
+  echo "Release ${TAG} is already sealed; reusing registry artifacts without a build trigger."
+elif [[ "$probe_status" -eq 1 ]]; then
+  if [[ "$EXPLICIT_TAG" == true ]]; then
+    echo "Explicit artifact ${TAG} is not sealed; refusing to trigger a build with an ambiguous identity." >&2
     exit 1
   fi
+  release_tag_revision=""
+  (( BUILD_REVISION == 1 )) || release_tag_revision="-r${BUILD_REVISION}"
+  release_tag="${TAG_PREFIX}${release_tag_revision}-$(date -u +%Y%m%d%H%M%S)-${short_commit}"
+  git -C "$APP_REPO" tag -a "$release_tag" "$target_commit" -m "Deploy LensRhyme ${TAG} (${REBUILD_REASON:-canonical build})"
+  git -C "$APP_REPO" push "$APP_REMOTE" "refs/tags/${release_tag}"
+  echo "Triggered build ${release_tag} for ${target_ref} ${target_commit} as artifact ${TAG}."
 else
-  git -C "$APP_REPO" tag -a "$TAG" "$target_commit" -m "Deploy LensRhyme ${TAG}"
+  echo "Registry probe failed for ${manifest_ref}: ${probe_result}" >&2
+  exit 1
 fi
-
-if git -C "$APP_REPO" ls-remote --exit-code --tags "$APP_REMOTE" "refs/tags/${TAG}" >/dev/null 2>&1; then
-  echo "Remote tag ${TAG} already exists."
-else
-  git -C "$APP_REPO" push "$APP_REMOTE" "refs/tags/${TAG}"
-fi
-
-echo "Released ${target_ref} ${target_commit} as ${TAG}."
 
 if [[ "$SKIP_WAIT" != "true" ]]; then
   "${SCRIPT_DIR}/wait-acr-images.sh" \
@@ -284,6 +311,7 @@ if [[ "$SKIP_DEPLOY" != "true" ]]; then
     --region "$DEPLOYMENT_REGION"
     --registry "$REGISTRY"
     --tag "$TAG"
+    --source-revision "$target_commit"
     --diagnostic-log-tail "$DIAGNOSTIC_LOG_TAIL"
   )
   if [[ -n "$DEPLOYMENT_ID" ]]; then

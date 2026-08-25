@@ -33,8 +33,10 @@ What it does on the target server:
 1. Clones or updates the deployment repo.
 2. Clones or updates a clean app repo under `/root/lens-rhyme-selfhost-source`.
 3. Checks out the requested app ref.
-4. Builds five local images:
+4. Derives `git-<full-commit-sha>` and reuses each local image whose source and
+   build-revision labels match; only missing or invalid components are built:
    - `lens-rhyme-selfhost/lens-rhyme-backend:<tag>`
+   - `lens-rhyme-selfhost/lens-rhyme-codex-runner:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-frontend:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-admin-frontend:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-docs-site:<tag>`
@@ -112,7 +114,10 @@ scripts/self-host-compose-cd.sh --local --app-ref main
 
 Useful overrides:
 
-- `--tag selfhost-YYYYMMDDHHMMSS-<sha>` for a known image tag.
+- `--tag <tag>` only for legacy compatibility; the default is the canonical
+  `git-<full-commit-sha>` identity.
+- `--build-revision N` creates a new immutable identity (`-rN`) when toolchain
+  or base-image changes require rebuilding unchanged source.
 - `--project-name <name>` when a server intentionally uses a non-default
   Compose project name.
 - `--npm-registry <url>` and `--pip-index-url <url>` for mirror acceleration.

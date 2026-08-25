@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/interactive-ssh.sh"
 source "${SCRIPT_DIR}/lib/deployment-observability.sh"
+source "${SCRIPT_DIR}/lib/release-artifact.sh"
 
 HOST=""
 RUN_LOCAL=false
@@ -18,6 +19,7 @@ ENV_SOURCE="${ENV_SOURCE:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-compose/docker-compose.yml}"
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-lens-rhyme-selfhost}"
 IMAGE_TAG="${IMAGE_TAG:-}"
+BUILD_REVISION="${BUILD_REVISION:-1}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
 NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org/}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple/}"
@@ -61,7 +63,8 @@ Options:
   --env-source <path>            Copy this .env when --dir has no .env.
   --compose-file <path>          Compose file relative to --dir. Defaults to compose/docker-compose.yml.
   --image-registry <name>        Local image namespace. Defaults to lens-rhyme-selfhost.
-  --tag <tag>                    Image tag. Defaults to selfhost-UTC-<shortsha>.
+  --tag <tag>                    Image tag. Defaults to git-<full-commit-sha>.
+  --build-revision <n>           Immutable local rebuild revision. Defaults to 1.
   --project-name <name>          Optional Compose project name. Leave empty to preserve Compose defaults.
   --npm-registry <url>           npm registry for frontend builds.
   --pip-index-url <url>          pip index URL for backend builds.
@@ -141,6 +144,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag)
       IMAGE_TAG="${2:?missing tag}"
+      shift 2
+      ;;
+    --build-revision)
+      BUILD_REVISION="${2:?missing build revision}"
       shift 2
       ;;
     --project-name)
@@ -272,6 +279,7 @@ run_remote() {
     --deployment-repo-url "$DEPLOYMENT_REPO_URL"
     --compose-file "$COMPOSE_FILE"
     --image-registry "$IMAGE_REGISTRY"
+    --build-revision "$BUILD_REVISION"
     --npm-registry "$NPM_REGISTRY"
     --pip-index-url "$PIP_INDEX_URL"
     --deployment-id "$DEPLOYMENT_ID"
@@ -418,7 +426,20 @@ build_image() {
   local buildkit="${DOCKER_BUILDKIT:-}"
   shift 2
 
-  echo "Building ${IMAGE_REGISTRY}/${image}:${IMAGE_TAG} from ${context}..."
+  local image_ref="${IMAGE_REGISTRY}/${image}:${IMAGE_TAG}"
+  local existing_revision existing_build_revision
+  existing_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_ref" 2>/dev/null || true)"
+  existing_build_revision="$(docker image inspect --format '{{ index .Config.Labels "io.lensrhyme.build-revision" }}' "$image_ref" 2>/dev/null || true)"
+  if [[ "$existing_revision" == "$TARGET_COMMIT" && "$existing_build_revision" == "$BUILD_REVISION" ]]; then
+    echo "Reusing ${image_ref}; source and build revision labels match."
+    return 0
+  fi
+  if docker image inspect "$image_ref" >/dev/null 2>&1 && [[ "$IMAGE_TAG" == git-* ]]; then
+    echo "Canonical local image ${image_ref} has conflicting provenance labels; use a new --build-revision." >&2
+    return 4
+  fi
+
+  echo "Building ${image_ref} from ${context}..."
   if [[ -z "$buildkit" ]]; then
     if docker buildx version >/dev/null 2>&1; then
       buildkit=1
@@ -430,6 +451,9 @@ build_image() {
   DOCKER_BUILDKIT="$buildkit" docker build \
     --pull \
     "$@" \
+    --label "org.opencontainers.image.revision=${TARGET_COMMIT}" \
+    --label "org.opencontainers.image.source=${APP_REPO_URL}" \
+    --label "io.lensrhyme.build-revision=${BUILD_REVISION}" \
     -t "${IMAGE_REGISTRY}/${image}:${IMAGE_TAG}" \
     -t "${IMAGE_REGISTRY}/${image}:latest" \
     "${APP_DIR}/${context}"
@@ -512,15 +536,15 @@ run_local() {
   trap finish_deployment EXIT
 
   deployment_set_phase preflight
+  [[ "$BUILD_REVISION" =~ ^[1-9][0-9]*$ ]] || { echo "--build-revision must be a positive integer." >&2; exit 2; }
   ensure_dotenv
   ensure_app_repo
 
-  local target_commit short_commit
+  local target_commit
   target_commit="$(git -C "$APP_DIR" rev-parse HEAD)"
-  short_commit="${target_commit:0:7}"
-
+  TARGET_COMMIT="$target_commit"
   if [[ -z "$IMAGE_TAG" ]]; then
-    IMAGE_TAG="selfhost-$(date -u +%Y%m%d%H%M%S)-${short_commit}"
+    IMAGE_TAG="$(canonical_artifact_tag "$target_commit" "$BUILD_REVISION" overseas)"
   fi
 
   echo "Deploying app ref ${APP_REF} (${target_commit}) as ${IMAGE_TAG}."
@@ -539,6 +563,13 @@ run_local() {
     fi
     printf 'IMAGE_REGISTRY=%s\n' "$IMAGE_REGISTRY"
     printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+    printf 'SOURCE_REVISION=%s\n' "$target_commit"
+    printf 'BACKEND_IMAGE=%s/lens-rhyme-backend:%s\n' "$IMAGE_REGISTRY" "$IMAGE_TAG"
+    printf 'CODEX_RUNNER_IMAGE=%s/lens-rhyme-codex-runner:%s\n' "$IMAGE_REGISTRY" "$IMAGE_TAG"
+    printf 'FRONTEND_IMAGE=%s/lens-rhyme-frontend:%s\n' "$IMAGE_REGISTRY" "$IMAGE_TAG"
+    printf 'ADMIN_FRONTEND_IMAGE=%s/lens-rhyme-admin-frontend:%s\n' "$IMAGE_REGISTRY" "$IMAGE_TAG"
+    printf 'DOCS_SITE_IMAGE=%s/lens-rhyme-docs-site:%s\n' "$IMAGE_REGISTRY" "$IMAGE_TAG"
+    printf 'CONTENT_FRONTEND_IMAGE=%s/lens-rhyme-content-frontend:%s\n' "$IMAGE_REGISTRY" "$IMAGE_TAG"
   } > .release.env
 
   compose=(docker compose --env-file .env --env-file .release.env -f "$COMPOSE_FILE")

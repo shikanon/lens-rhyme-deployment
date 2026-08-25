@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/deployment-region.sh"
+source "${SCRIPT_DIR}/lib/release-artifact.sh"
 
 DEPLOYMENT_REGION="${DEPLOYMENT_REGION:-overseas}"
 REGISTRY="${IMAGE_REGISTRY:-}"
@@ -16,6 +17,7 @@ IMAGES=(
   lens-rhyme-admin-frontend
   lens-rhyme-docs-site
   lens-rhyme-content-frontend
+  lens-rhyme-release-manifest
 )
 
 usage() {
@@ -83,20 +85,6 @@ if [[ -z "$TAG" ]]; then
   exit 2
 fi
 
-image_exists() {
-  local image_ref="$1"
-
-  if docker manifest inspect "$image_ref" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  if docker buildx imagetools inspect "$image_ref" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  return 1
-}
-
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 
 while true; do
@@ -104,9 +92,15 @@ while true; do
 
   for image in "${IMAGES[@]}"; do
     image_ref="${REGISTRY}/${image}:${IMAGE_TAG}"
-    if ! image_exists "$image_ref"; then
+    probe_result="$(probe_release_image "$image_ref")" || probe_status=$?
+    probe_status="${probe_status:-0}"
+    if [[ "$probe_status" -eq 1 ]]; then
       missing+=("$image_ref")
+    elif [[ "$probe_status" -ne 0 ]]; then
+      echo "Registry probe failed for ${image_ref}: ${probe_result}" >&2
+      exit 1
     fi
+    unset probe_status
   done
 
   if [[ ${#missing[@]} -eq 0 ]]; then

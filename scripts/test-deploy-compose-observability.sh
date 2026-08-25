@@ -7,6 +7,7 @@ trap 'rm -rf "$test_root"' EXIT
 
 mkdir -p "$test_root/bin" "$test_root/remote/scripts/lib"
 cp "$SCRIPT_DIR/lib/deployment-observability.sh" "$test_root/remote/scripts/lib/"
+cp "$SCRIPT_DIR/lib/release-artifact.sh" "$test_root/remote/scripts/lib/"
 touch "$test_root/remote/.env"
 
 cat >"$test_root/bin/fake-ssh" <<'EOF'
@@ -32,6 +33,18 @@ cat >"$test_root/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'fake docker: %s\n' "$*"
+if [[ "$*" == "buildx imagetools inspect "* ]]; then
+  echo 'Digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  exit 0
+fi
+if [[ "$*" == *" config" ]]; then
+  echo 'services: {}'
+  exit 0
+fi
+if [[ "$*" == *" ps --status running --services" ]]; then
+  printf '%s\n' backend codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx
+  exit 0
+fi
 if [[ "$*" == *" up -d "* && "${FAKE_DOCKER_FAIL_UP:-false}" == "true" ]]; then
   echo "simulated compose up failure" >&2
   exit 42
@@ -55,6 +68,22 @@ PATH="$test_root/bin:$PATH" SSH_BIN="$test_root/bin/fake-ssh" SSHPASS=test-passw
 
 grep -Fq '"status": "succeeded"' "$test_root/logs/test-success.status.json"
 grep -Fq '"exit_code": 0' "$test_root/logs/test-success.status.json"
+
+PATH="$test_root/bin:$PATH" SSH_BIN="$test_root/bin/fake-ssh" SSHPASS=test-password \
+  "$SCRIPT_DIR/deploy-compose.sh" \
+  --host test@example.invalid \
+  --dir "$test_root/remote" \
+  --tag deploy-test-success \
+  --deployment-id test-noop \
+  --deployment-log-dir "$test_root/logs" \
+  --ssh-option StrictHostKeyChecking=no
+grep -Fq 'already converged on the requested digests' "$test_root/logs/test-noop.log"
+if grep -Fq 'Starting LensRhyme Compose stack' "$test_root/logs/test-noop.log"; then
+  echo "No-op deployment unexpectedly ran Compose up." >&2
+  exit 1
+fi
+
+unlink "$test_root/remote/.deployment-state"
 
 set +e
 PATH="$test_root/bin:$PATH" SSH_BIN="$test_root/bin/fake-ssh" SSHPASS=test-password FAKE_DOCKER_FAIL_UP=true \

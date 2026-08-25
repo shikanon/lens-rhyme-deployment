@@ -14,21 +14,27 @@ server pulls that tag through this deployment repo.
 - Default registry namespace: `shikanon096` on Docker Hub.
 - China registry namespace: `registry.cn-hangzhou.aliyuncs.com/lens-rhyme`
   after the release tag is explicitly mirrored.
-- Release tag format: `deploy-YYYYMMDDHHMMSS-<shortsha>`.
+- Artifact tag format: `git-<full-commit-sha>`; an intentional rebuild uses
+  `git-<full-commit-sha>-rN`; a China Docker Hub fallback adds `-cn` so it
+  cannot overwrite the overseas artifact.
+- `deploy-*` Git tags are build events only. They are not image identities.
 - Compose runtime override file: `.release.env`, generated on the server.
 
 `IMAGE_TAG` defaults to `latest` so existing environments continue to start, but
-production releases should always pass a release tag.
+production releases should always pass an immutable artifact tag.
 
 ## Image Build Trigger
 
 The current implementation uses the application repository GitHub Actions `CD`
-workflow. A push to a `deploy-*` Git tag builds all five images and pushes them
-to Docker Hub.
+workflow. A push to a `deploy-*` Git tag probes the canonical artifact first,
+builds only missing components, and seals the six-component release manifest.
+If that manifest already exists, `release-main-to-compose.sh` does not create a
+new build trigger.
 
 | Docker Hub repository | Build context | Dockerfile |
 | --- | --- | --- |
 | `lens-rhyme-backend` | `/backend` | `Dockerfile` |
+| `lens-rhyme-codex-runner` | `/backend` | `Dockerfile.runner` |
 | `lens-rhyme-frontend` | `/frontend` | `Dockerfile` |
 | `lens-rhyme-admin-frontend` | `/admin-frontend` | `Dockerfile` |
 | `lens-rhyme-docs-site` | `/docs-site` | `Dockerfile` |
@@ -50,13 +56,17 @@ scripts/release-main-to-compose.sh \
 What it does:
 
 1. Fetches the application repo remote branch, defaulting to `origin/main`.
-2. Creates and pushes a `deploy-*` release tag at the remote branch commit.
-3. Lets the application CD workflow build all five images from that tag.
-4. Waits until all five images exist in the selected registry with the same tag.
-5. SSHes to the server, writes `.release.env`, pulls the tag, runs Compose, and
+2. Derives the canonical artifact tag from the full commit SHA.
+3. Reuses an already sealed release, or pushes a `deploy-*` event tag so the
+   application workflow builds only missing components and seals the release.
+4. Waits until all six images and the release manifest exist.
+5. SSHes to the server, resolves every image tag to a digest, writes
+   `.release.env`, runs Compose, and
    checks `http://127.0.0.1/` plus `http://127.0.0.1/docs/`.
 
-Image pulls, including Compose sidecars such as Postgres, Nginx, and
+When the resolved digests, rendered Compose configuration, and runtime
+environment are unchanged and all required services are running, deployment is
+a no-op; health checks still run. Image pulls, including Compose sidecars such as Postgres, Nginx, and
 PostgreSQL/pgvector, are executed service-by-service with retries so transient registry
 auth or network resets do not fail the whole rollout immediately.
 
@@ -139,12 +149,15 @@ Use this when ACR already has the images or when rolling back:
 
 ```bash
 scripts/deploy-compose.sh \
-  --tag deploy-20260622120000-7cf974f \
+  --tag git-0123456789abcdef0123456789abcdef01234567 \
   --run-smoke-test \
   --smoke-test-base-url https://lens.example.com
 ```
 
-The script does not edit `.env`; it only rewrites `.release.env`.
+The script does not edit `.env`; it resolves all six component images to
+`repository@sha256:...` and writes those immutable references to `.release.env`.
+Registry authentication, rate-limit, and transport failures fail fast and are
+never treated as an absent image.
 
 To run only the validation script on a server where Compose is already up:
 
@@ -192,7 +205,7 @@ curl -I http://127.0.0.1/outputs/<known-file>
 Keep a small inventory outside this repo and deploy the same tag to each host:
 
 ```bash
-tag=deploy-20260622120000-7cf974f
+tag=git-0123456789abcdef0123456789abcdef01234567
 while read -r host; do
   DEPLOY_HOST="$host" scripts/deploy-compose.sh --tag "$tag"
 done < hosts.txt
@@ -200,7 +213,7 @@ done < hosts.txt
 
 For more than a handful of servers, graduate this flow to Ansible or a GitHub
 Actions environment matrix. The same contract still applies: one release tag,
-five images, many Compose targets.
+six images, many Compose targets.
 
 ## Better CD Options
 
@@ -208,10 +221,11 @@ GitHub Actions tag builds plus these scripts are the lowest-friction path
 because they fit the current Compose servers. The next step up is a fuller
 release pipeline:
 
-- build and push all five images with Docker Buildx.
+- build and push all six images with Docker Buildx.
 - use environments for staging/production approvals.
 - deploy to multiple hosts through an inventory matrix.
-- publish a release summary with image digests and health-check results.
+- publish a sealed release manifest, component digests, reuse decisions, and
+  health-check results.
 
 For Kubernetes-first environments, use Argo CD or Flux against Helm/Kustomize
 manifests and pin image digests instead of tags.
