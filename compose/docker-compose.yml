@@ -1,6 +1,6 @@
 services:
   backend-init:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-backend:${IMAGE_TAG:-latest}
+    image: ${BACKEND_IMAGE:-shikanon096/lens-rhyme-backend:latest}
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
@@ -26,7 +26,7 @@ services:
     restart: "no"
 
   backend:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-backend:${IMAGE_TAG:-latest}
+    image: ${BACKEND_IMAGE:-shikanon096/lens-rhyme-backend:latest}
     volumes:
       - backend_data:/app/data
       - backend_outputs:/app/outputs
@@ -82,7 +82,7 @@ services:
     restart: always
 
   codex-runner-manager:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-codex-runner:${IMAGE_TAG:-latest}
+    image: ${CODEX_RUNNER_IMAGE:-shikanon096/lens-rhyme-codex-runner:latest}
     volumes:
       - codex_runner_data:/app/data
       - backend_outputs:/app/outputs
@@ -143,19 +143,19 @@ services:
     restart: always
 
   frontend:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-frontend:${IMAGE_TAG:-latest}
+    image: ${FRONTEND_IMAGE:-shikanon096/lens-rhyme-frontend:latest}
     restart: always
 
   admin-frontend:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-admin-frontend:${IMAGE_TAG:-latest}
+    image: ${ADMIN_FRONTEND_IMAGE:-shikanon096/lens-rhyme-admin-frontend:latest}
     restart: always
 
   docs-site:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-docs-site:${IMAGE_TAG:-latest}
+    image: ${DOCS_SITE_IMAGE:-shikanon096/lens-rhyme-docs-site:latest}
     restart: always
 
   content-frontend:
-    image: ${IMAGE_REGISTRY:-shikanon096}/lens-rhyme-content-frontend:${IMAGE_TAG:-latest}
+    image: ${CONTENT_FRONTEND_IMAGE:-shikanon096/lens-rhyme-content-frontend:latest}
     environment:
       NEXT_PUBLIC_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
       NEXT_PUBLIC_PRODUCT_URL: ${CONTENT_PRODUCT_URL:-https://lensrhyme.com/login}

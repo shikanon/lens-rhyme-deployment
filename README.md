@@ -8,6 +8,7 @@ Application images are built by the LensRhyme CI/CD pipeline and published to
 Docker Hub by default:
 
 - `backend`: `shikanon096/lens-rhyme-backend:<tag>`
+- `codex-runner`: `shikanon096/lens-rhyme-codex-runner:<tag>`
 - `frontend`: `shikanon096/lens-rhyme-frontend:<tag>`
 - `admin-frontend`: `shikanon096/lens-rhyme-admin-frontend:<tag>`
 - `docs-site`: `shikanon096/lens-rhyme-docs-site:<tag>`
@@ -28,7 +29,7 @@ scripts/deploy-compose.sh --tag <release-tag>
 scripts/deploy-compose.sh --region china --tag <release-tag>
 ```
 
-China mode does not silently copy images. Mirror all five images with the same
+China mode does not silently copy images. Mirror all six images with the same
 immutable tag before deploying. Explicit registry overrides always take
 precedence over the region default.
 
@@ -60,8 +61,7 @@ resolve as expected.
 Registry image deployment:
 
 ```bash
-IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml pull
-IMAGE_TAG=deploy-20260622120000-7cf974f docker compose --env-file .env -f compose/docker-compose.yml up -d
+scripts/deploy-compose.sh --tag git-<full-commit-sha>
 ```
 
 The Compose file is self-contained: it stores backend runtime data in Docker
@@ -80,9 +80,10 @@ scripts/release-main-to-compose.sh \
 ```
 
 The script prompts for the target server host/IP and SSH password when they are
-not provided. It tags the latest application `origin/main`, waits for the
-selected registry to expose all five images with the same tag, then deploys
-that tag on the target server. See `docs/tagged-compose-cd.md` for the
+not provided. It derives the canonical artifact identity from application
+`origin/main`, reuses a sealed release or triggers only missing builds, then
+deploys six digest-pinned images on the target server. See
+`docs/tagged-compose-cd.md` for the
 tag-triggered build contract, rollback flow, and multi-server options.
 
 For a brand-new server that does not yet have this deployment repository or a
