@@ -43,6 +43,10 @@ SSH_OPTS=()
 DEPLOYMENT_ID="${DEPLOYMENT_ID:-}"
 DEPLOYMENT_LOG_DIR="${DEPLOYMENT_LOG_DIR:-}"
 DIAGNOSTIC_LOG_TAIL="${DIAGNOSTIC_LOG_TAIL:-300}"
+RUN_DATABASE_BACKUP="${RUN_DATABASE_BACKUP:-true}"
+DATABASE_BACKUP_DIR="${DATABASE_BACKUP_DIR:-}"
+DATABASE_BACKUP_RETENTION_DAYS="${DATABASE_BACKUP_RETENTION_DAYS:-7}"
+DATABASE_BACKUP_SCHEDULE="${DATABASE_BACKUP_SCHEDULE:-0 2 * * *}"
 compose=()
 
 usage() {
@@ -86,6 +90,10 @@ Options:
   --deployment-id <id>           Caller-provided deployment ID. Defaults to an auto-generated ID.
   --deployment-log-dir <path>    Log directory. Defaults to <deploy-dir>/.deployment-logs.
   --diagnostic-log-tail <n>      Container log lines collected on failure. Defaults to 300.
+  --database-backup-dir <path>   PostgreSQL backup directory. Defaults to <deploy-dir>/.database-backups.
+  --database-backup-retention-days <days> Delete backups older than this many days. Defaults to 7; 0 keeps all.
+  --database-backup-schedule <cron> Daily backup cron schedule. Defaults to "0 2 * * *".
+  --skip-database-backup         Skip pre-deployment backup and daily backup scheduling.
   --ssh-option <option>          Extra ssh -o option. Repeat for multiple options.
   -h, --help                     Show this help.
 
@@ -234,6 +242,22 @@ while [[ $# -gt 0 ]]; do
       DIAGNOSTIC_LOG_TAIL="${2:?missing diagnostic log tail}"
       shift 2
       ;;
+    --database-backup-dir)
+      DATABASE_BACKUP_DIR="${2:?missing database backup dir}"
+      shift 2
+      ;;
+    --database-backup-retention-days)
+      DATABASE_BACKUP_RETENTION_DAYS="${2:?missing database backup retention days}"
+      shift 2
+      ;;
+    --database-backup-schedule)
+      DATABASE_BACKUP_SCHEDULE="${2:?missing database backup schedule}"
+      shift 2
+      ;;
+    --skip-database-backup)
+      RUN_DATABASE_BACKUP=false
+      shift
+      ;;
     --ssh-option)
       SSH_OPTS+=(-o "${2:?missing ssh option}")
       shift 2
@@ -284,6 +308,8 @@ run_remote() {
     --pip-index-url "$PIP_INDEX_URL"
     --deployment-id "$DEPLOYMENT_ID"
     --diagnostic-log-tail "$DIAGNOSTIC_LOG_TAIL"
+    --database-backup-retention-days "$DATABASE_BACKUP_RETENTION_DAYS"
+    --database-backup-schedule "$DATABASE_BACKUP_SCHEDULE"
   )
 
   if [[ -n "$IMAGE_TAG" ]]; then
@@ -297,6 +323,12 @@ run_remote() {
   fi
   if [[ -n "$DEPLOYMENT_LOG_DIR" ]]; then
     remote_args+=(--deployment-log-dir "$DEPLOYMENT_LOG_DIR")
+  fi
+  if [[ -n "$DATABASE_BACKUP_DIR" ]]; then
+    remote_args+=(--database-backup-dir "$DATABASE_BACKUP_DIR")
+  fi
+  if [[ "$RUN_DATABASE_BACKUP" != "true" ]]; then
+    remote_args+=(--skip-database-backup)
   fi
   if [[ "$ALLOW_DIRTY_APP" == "true" ]]; then
     remote_args+=(--allow-dirty-app)
@@ -479,6 +511,64 @@ pull_service() {
   done
 }
 
+backup_database() {
+  if [[ "$RUN_DATABASE_BACKUP" != "true" ]]; then
+    echo "Automatic PostgreSQL backup skipped by request."
+    return 0
+  fi
+  if ! "${SCRIPT_DIR}/postgres-backup-compose.sh" \
+    --deploy-dir "$DEPLOY_DIR" \
+    --compose-file "$COMPOSE_FILE" \
+    --backup-dir "$DATABASE_BACKUP_DIR" \
+    --retention-days "$DATABASE_BACKUP_RETENTION_DAYS" \
+    --label "$DEPLOYMENT_ID"; then
+    echo "PostgreSQL backup failed; deployment aborted before Compose services were updated." >&2
+    return 1
+  fi
+}
+
+configure_database_backup_schedule() {
+  local runner_file cron_log cron_marker cron_file q_script q_deploy_dir q_compose_file
+  local q_backup_dir q_retention_days q_path
+
+  if [[ "$RUN_DATABASE_BACKUP" != "true" ]]; then
+    echo "Daily PostgreSQL backup scheduling skipped by request."
+    return 0
+  fi
+
+  runner_file="${DATABASE_BACKUP_DIR}/run-daily-backup.sh"
+  cron_log="${DATABASE_BACKUP_DIR}/daily-backup.log"
+  cron_marker="# lens-rhyme-postgres-backup:$(printf '%s' "${DEPLOY_DIR}|${COMPOSE_PROJECT_NAME}" | cksum | awk '{print $1}')"
+  mkdir -p "$DATABASE_BACKUP_DIR"
+
+  printf -v q_script '%q' "${SCRIPT_DIR}/postgres-backup-compose.sh"
+  printf -v q_deploy_dir '%q' "$DEPLOY_DIR"
+  printf -v q_compose_file '%q' "$COMPOSE_FILE"
+  printf -v q_backup_dir '%q' "$DATABASE_BACKUP_DIR"
+  printf -v q_retention_days '%q' "$DATABASE_BACKUP_RETENTION_DAYS"
+  printf -v q_path '%q' "$PATH"
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    printf 'export PATH=%s\n' "$q_path"
+    printf 'exec %s --deploy-dir %s --compose-file %s --backup-dir %s --retention-days %s --label scheduled\n' \
+      "$q_script" "$q_deploy_dir" "$q_compose_file" "$q_backup_dir" "$q_retention_days"
+  } >"$runner_file"
+  chmod 700 "$runner_file"
+
+  cron_file="$(mktemp)"
+  crontab -l >"$cron_file" 2>/dev/null || true
+  grep -Fv "$cron_marker" "$cron_file" >"${cron_file}.next" || true
+  mv "${cron_file}.next" "$cron_file"
+  printf '\n%s %q >>%q 2>&1 %s\n' "$DATABASE_BACKUP_SCHEDULE" "$runner_file" "$cron_log" "$cron_marker" >>"$cron_file"
+  if ! crontab "$cron_file"; then
+    rm -f "$cron_file"
+    echo "Failed to install the daily PostgreSQL backup schedule." >&2
+    return 1
+  fi
+  rm -f "$cron_file"
+  echo "Installed daily PostgreSQL backup schedule: ${DATABASE_BACKUP_SCHEDULE}"
+}
+
 check_url() {
   local url="$1"
   local attempts=30
@@ -537,8 +627,20 @@ run_local() {
 
   deployment_set_phase preflight
   [[ "$BUILD_REVISION" =~ ^[1-9][0-9]*$ ]] || { echo "--build-revision must be a positive integer." >&2; exit 2; }
+  [[ "$DATABASE_BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || { echo "--database-backup-retention-days must be a non-negative integer." >&2; exit 2; }
+  [[ "$RUN_DATABASE_BACKUP" == "true" || "$RUN_DATABASE_BACKUP" == "false" ]] || { echo "RUN_DATABASE_BACKUP must be true or false." >&2; exit 2; }
+  if [[ "$RUN_DATABASE_BACKUP" == "true" ]]; then
+    [[ "$DATABASE_BACKUP_SCHEDULE" =~ ^[0-9*/,-]+[[:space:]]+[0-9*/,-]+[[:space:]]+[0-9*/,-]+[[:space:]]+[0-9*/,-]+[[:space:]]+[0-9*/,-]+$ ]] || { echo "--database-backup-schedule must contain five cron fields." >&2; exit 2; }
+    command -v crontab >/dev/null 2>&1 || { echo "crontab is required for daily database backups." >&2; exit 1; }
+  fi
   ensure_dotenv
   ensure_app_repo
+
+  if [[ -z "$DATABASE_BACKUP_DIR" ]]; then
+    DATABASE_BACKUP_DIR="${DEPLOY_DIR}/.database-backups"
+  elif [[ "$DATABASE_BACKUP_DIR" != /* ]]; then
+    DATABASE_BACKUP_DIR="${DEPLOY_DIR}/${DATABASE_BACKUP_DIR}"
+  fi
 
   local target_commit
   target_commit="$(git -C "$APP_DIR" rev-parse HEAD)"
@@ -578,6 +680,9 @@ run_local() {
   echo "Validating Compose config for local image tag ${IMAGE_TAG}..."
   "${compose[@]}" config >/tmp/lens-rhyme-selfhost-compose-config.yml
 
+  deployment_set_phase database_backup
+  backup_database
+
   echo "Pulling Compose sidecars..."
   deployment_set_phase image_pull
   for service in postgres nginx; do
@@ -590,6 +695,9 @@ run_local() {
 
   echo "Compose services:"
   "${compose[@]}" ps
+
+  deployment_set_phase database_backup_schedule
+  configure_database_backup_schedule
 
   if [[ "$SKIP_ROUTE_CHECKS" != "true" ]]; then
     deployment_set_phase health_checks

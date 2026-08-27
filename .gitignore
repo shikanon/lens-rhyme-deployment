@@ -4,6 +4,7 @@
 !.env.example
 .release.env
 .deployment-logs/
+.database-backups/
 
 # macOS
 .DS_Store

@@ -42,9 +42,40 @@ What it does on the target server:
    - `lens-rhyme-selfhost/lens-rhyme-docs-site:<tag>`
    - `lens-rhyme-selfhost/lens-rhyme-content-frontend:<tag>`
 5. Writes `.release.env` with the local image namespace and tag.
-6. Pulls only sidecar images such as PostgreSQL/pgvector and Nginx.
-7. Runs Docker Compose and checks `http://127.0.0.1/` plus
+6. Creates a compressed PostgreSQL backup before changing Compose services.
+7. Pulls only sidecar images such as PostgreSQL/pgvector and Nginx.
+8. Runs Docker Compose and checks `http://127.0.0.1/` plus
    `http://127.0.0.1/docs/` by default.
+
+## Automatic Database Backups
+
+Every deployment backs up the existing PostgreSQL database before any Compose
+service is pulled or updated. It also installs a user crontab entry that runs a
+full logical backup every day at 02:00 in the host's timezone. Backups use
+PostgreSQL's custom dump format and
+are written atomically to `<deploy-dir>/.database-backups/` with permissions
+restricted to the deployment user. A failed or empty dump stops the deployment.
+On a first deployment, where no PostgreSQL container exists yet, the step is
+skipped.
+
+Backups older than seven days are deleted after a successful new dump. The
+location and retention can be changed explicitly:
+
+```bash
+scripts/self-host-compose-cd.sh \
+  --local \
+  --database-backup-dir /var/backups/lens-rhyme/postgres \
+  --database-backup-retention-days 30 \
+  --database-backup-schedule "30 1 * * *"
+```
+
+Set the retention to `0` to keep every backup. Use
+`--skip-database-backup` only when the database is already protected by another
+verified backup system; it disables both the deployment-time dump and daily
+schedule installation. If an existing PostgreSQL container is stopped, the
+script aborts rather than silently deploying without a backup. Daily backup
+output is recorded in `<backup-dir>/daily-backup.log`.
+The host must have `crontab` installed and its cron service running.
 
 Add `--run-prerelease-validation` to run the prerelease gate after route checks.
 Pass the Admin URL, main frontend URL, database URL, and Volcengine/Ark API key
