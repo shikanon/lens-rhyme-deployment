@@ -36,6 +36,7 @@ precedence over the region default.
 ## Directory Layout
 
 - `compose/`: Docker Compose stack using prebuilt registry images.
+- `nginx/`: reusable snippets for installations using host Nginx.
 - `docs/`: release workflow and CD runbooks.
 - `scripts/`: tag, image-wait, and Compose deployment helpers.
 - `kubernetes/`: raw Kubernetes manifests using prebuilt registry images.
@@ -71,6 +72,10 @@ For fast single-server self-host deployments that build images on the target
 machine instead of pushing them through a remote registry, use
 `scripts/self-host-compose-cd.sh`. See
 [`docs/self-host-compose-cd.md`](docs/self-host-compose-cd.md).
+
+If host Nginx proxies directly to the backend instead of using the Compose
+gateway, follow [`docs/host-nginx-api-compression.md`](docs/host-nginx-api-compression.md)
+to preserve JSON response compression at the active HTTPS entry point.
 
 For the normal tagged release flow, use:
 
