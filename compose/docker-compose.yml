@@ -81,6 +81,69 @@ services:
     command: ["python", "-m", "scripts.server", "start", "--host", "0.0.0.0", "--port", "8000"]
     restart: always
 
+  seo-generation-worker:
+    image: ${BACKEND_IMAGE:-shikanon096/lens-rhyme-backend:latest}
+    volumes:
+      - backend_data:/app/data
+      - backend_outputs:/app/outputs
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
+      DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
+      BACKEND_DATA_PATH: /app/data
+      BACKEND_OUTPUTS_PATH: /app/outputs
+      OBJECT_STORAGE_PROVIDER: ${OBJECT_STORAGE_PROVIDER:-}
+      OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
+      OBJECT_STORAGE_ACCESS_KEY_SECRET: ${OBJECT_STORAGE_ACCESS_KEY_SECRET:-}
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
+      OBJECT_STORAGE_BUCKET_NAME: ${OBJECT_STORAGE_BUCKET_NAME:-}
+      OBJECT_STORAGE_CDN_DOMAIN: ${OBJECT_STORAGE_CDN_DOMAIN:-}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-}
+      OBJECT_STORAGE_ADDRESSING_STYLE: ${OBJECT_STORAGE_ADDRESSING_STYLE:-}
+      OBJECT_STORAGE_CONNECT_TIMEOUT: ${OBJECT_STORAGE_CONNECT_TIMEOUT:-}
+      OBJECT_STORAGE_READ_TIMEOUT: ${OBJECT_STORAGE_READ_TIMEOUT:-}
+      OBJECT_STORAGE_MOCK_UPLOAD: ${OBJECT_STORAGE_MOCK_UPLOAD:-false}
+      RESOURCEFS_BUCKET: ${RESOURCEFS_BUCKET:-resources}
+      RESOURCEFS_CDN_BASE_URL: ${RESOURCEFS_CDN_BASE_URL:-}
+      RESOURCEFS_CDN_SIGNING_SECRET: ${RESOURCEFS_CDN_SIGNING_SECRET:-}
+      CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+    depends_on:
+      backend-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "scripts.seo_generation_text_worker"]
+    stop_grace_period: 2m
+    restart: always
+
+  seo-publication-worker:
+    image: ${BACKEND_IMAGE:-shikanon096/lens-rhyme-backend:latest}
+    volumes:
+      - backend_data:/app/data
+      - backend_outputs:/app/outputs
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-lens-rhyme-local-dev-key}
+      DATABASE_URL: postgresql://lens_rhyme:lens_rhyme@postgres:5432/lens_rhyme
+      BACKEND_DATA_PATH: /app/data
+      BACKEND_OUTPUTS_PATH: /app/outputs
+      CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+      CONTENT_FRONTEND_REVALIDATION_URLS: ${CONTENT_FRONTEND_REVALIDATION_URLS:-http://content-frontend:3002/internal/content/revalidate}
+      CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
+      CONTENT_CDN_PURGE_ENDPOINT: ${CONTENT_CDN_PURGE_ENDPOINT:-}
+      CONTENT_CDN_PURGE_TOKEN: ${CONTENT_CDN_PURGE_TOKEN:-}
+      INDEXNOW_ENABLED: ${INDEXNOW_ENABLED:-false}
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      INDEXNOW_KEY_LOCATION: ${INDEXNOW_KEY_LOCATION:-https://lensrhyme.com/indexnow-key.txt}
+    depends_on:
+      backend-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      content-frontend:
+        condition: service_started
+    command: ["python", "-m", "scripts.publish_content_events"]
+    stop_grace_period: 30s
+    restart: always
+
   codex-runner-manager:
     image: ${CODEX_RUNNER_IMAGE:-shikanon096/lens-rhyme-codex-runner:latest}
     volumes:
@@ -159,7 +222,7 @@ services:
     environment:
       NEXT_PUBLIC_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
       NEXT_PUBLIC_PRODUCT_URL: ${CONTENT_PRODUCT_URL:-https://lensrhyme.com/login}
-      CONTENT_SOURCE: ${CONTENT_SOURCE:-api}
+      CONTENT_SOURCE: ${CONTENT_SOURCE:-hybrid}
       CONTENT_API_BASE_URL: ${CONTENT_API_BASE_URL:-http://backend:8000/api/v1/public/content}
       CONTENT_API_REQUIRED: ${CONTENT_API_REQUIRED:-1}
       CONTENT_API_REVALIDATE_SECONDS: ${CONTENT_API_REVALIDATE_SECONDS:-300}
@@ -222,6 +285,28 @@ configs:
           }
 
           location ~ ^/(?:blog|press|guides|workflows|templates|compare|use-cases)(?:/|$$) {
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              proxy_set_header X-Forwarded-Host $$http_host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location ~ ^/zh/(?:blog|press|guides|workflows|templates|compare|use-cases|search)(?:/|$$) {
+              set $$upstream http://content-frontend:3002;
+              proxy_pass $$upstream;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$http_host;
+              proxy_set_header X-Forwarded-Host $$http_host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location ~ ^/zh/?$$ {
               set $$upstream http://content-frontend:3002;
               proxy_pass $$upstream;
               proxy_http_version 1.1;
