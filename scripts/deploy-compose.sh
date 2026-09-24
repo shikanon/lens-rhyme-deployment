@@ -343,7 +343,7 @@ compose_config="$(mktemp /tmp/lens-rhyme-compose-config.XXXXXX.yml)"
 config_digest="$(sha256sum "$compose_config" | awk '{print $1}')"
 rm -f "$compose_config"
 
-required_services=(backend codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx)
+required_services=(backend seo-generation-worker seo-publication-worker codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx)
 stack_is_running() {
   local running service
   running="$("${compose[@]}" ps --status running --services 2>/dev/null || true)"
@@ -381,7 +381,7 @@ pull_service() {
 if [[ "$NOOP_DEPLOY" != true ]]; then
   echo "Pulling Compose images for artifact ${IMAGE_TAG}..."
   deployment_set_phase image_pull
-  for service in backend-init codex-runner-manager frontend admin-frontend docs-site content-frontend; do
+  for service in backend-init codex-runner-manager frontend admin-frontend docs-site content-frontend seo-generation-worker seo-publication-worker; do
     pull_service "$service"
   done
 
@@ -412,6 +412,7 @@ check_url() {
 deployment_set_phase health_checks
 check_url "${SMOKE_TEST_BASE_URL%/}/"
 check_url "${SMOKE_TEST_BASE_URL%/}/docs/"
+check_url "${SMOKE_TEST_BASE_URL%/}/zh"
 
 check_get_url() {
   local url="$1"

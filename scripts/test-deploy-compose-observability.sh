@@ -42,7 +42,7 @@ if [[ "$*" == *" config" ]]; then
   exit 0
 fi
 if [[ "$*" == *" ps --status running --services" ]]; then
-  printf '%s\n' backend codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx
+  printf '%s\n' backend seo-generation-worker seo-publication-worker codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx
   exit 0
 fi
 if [[ "$*" == *" up -d "* && "${FAKE_DOCKER_FAIL_UP:-false}" == "true" ]]; then
