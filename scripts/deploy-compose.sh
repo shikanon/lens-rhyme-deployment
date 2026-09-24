@@ -335,6 +335,13 @@ chmod 600 "$release_env_tmp"
 mv "$release_env_tmp" .release.env
 
 compose=(docker compose --env-file .env --env-file .release.env -f "$COMPOSE_FILE")
+compose_override="${COMPOSE_FILE%/*}/docker-compose.override.yml"
+if [[ "$COMPOSE_FILE" != */* ]]; then
+  compose_override="docker-compose.override.yml"
+fi
+if [[ -f "$compose_override" ]]; then
+  compose+=(-f "$compose_override")
+fi
 
 deployment_set_phase compose_validation
 echo "Validating Compose config for image tag ${IMAGE_TAG}..."
@@ -343,7 +350,7 @@ compose_config="$(mktemp /tmp/lens-rhyme-compose-config.XXXXXX.yml)"
 config_digest="$(sha256sum "$compose_config" | awk '{print $1}')"
 rm -f "$compose_config"
 
-required_services=(backend seo-generation-worker seo-publication-worker codex-runner-manager frontend admin-frontend docs-site content-frontend postgres nginx)
+required_services=(backend seo-generation-worker seo-publication-worker codex-runner-manager frontend admin-frontend docs-site content-frontend postgres)
 stack_is_running() {
   local running service
   running="$("${compose[@]}" ps --status running --services 2>/dev/null || true)"
