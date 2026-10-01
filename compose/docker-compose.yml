@@ -64,6 +64,8 @@ services:
       RESOURCEFS_CDN_BASE_URL: ${RESOURCEFS_CDN_BASE_URL:-}
       RESOURCEFS_CDN_SIGNING_SECRET: ${RESOURCEFS_CDN_SIGNING_SECRET:-}
       CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+      SEO_RESEARCH_SEARCH_URL: ${SEO_RESEARCH_SEARCH_URL-http://seo-research:3210}
+      SEO_RESEARCH_ENGINES: ${SEO_RESEARCH_ENGINES:-bing,duckduckgo}
       CONTENT_FRONTEND_REVALIDATION_URLS: ${CONTENT_FRONTEND_REVALIDATION_URLS:-http://content-frontend:3002/internal/content/revalidate}
       CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
       CONTENT_CDN_PURGE_ENDPOINT: ${CONTENT_CDN_PURGE_ENDPOINT:-}
@@ -79,6 +81,30 @@ services:
       codex-runner-manager:
         condition: service_healthy
     command: ["python", "-m", "scripts.server", "start", "--host", "0.0.0.0", "--port", "8000"]
+    restart: always
+
+  seo-research:
+    image: lens-rhyme-seo-research:a61bc65-fixed2
+    build:
+      context: ../research
+    pull_policy: never
+    environment:
+      SEARCH_MODE: request
+      ALLOWED_SEARCH_ENGINES: bing,duckduckgo,exa,brave,startpage,hackernews
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3210/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: always
 
   seo-generation-worker:
@@ -106,7 +132,11 @@ services:
       RESOURCEFS_CDN_BASE_URL: ${RESOURCEFS_CDN_BASE_URL:-}
       RESOURCEFS_CDN_SIGNING_SECRET: ${RESOURCEFS_CDN_SIGNING_SECRET:-}
       CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+      SEO_RESEARCH_SEARCH_URL: ${SEO_RESEARCH_SEARCH_URL-http://seo-research:3210}
+      SEO_RESEARCH_ENGINES: ${SEO_RESEARCH_ENGINES:-bing,duckduckgo}
     depends_on:
+      seo-research:
+        condition: service_healthy
       backend-init:
         condition: service_completed_successfully
       postgres:
@@ -126,6 +156,8 @@ services:
       BACKEND_DATA_PATH: /app/data
       BACKEND_OUTPUTS_PATH: /app/outputs
       CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
+      SEO_RESEARCH_SEARCH_URL: ${SEO_RESEARCH_SEARCH_URL-http://seo-research:3210}
+      SEO_RESEARCH_ENGINES: ${SEO_RESEARCH_ENGINES:-bing,duckduckgo}
       CONTENT_FRONTEND_REVALIDATION_URLS: ${CONTENT_FRONTEND_REVALIDATION_URLS:-http://content-frontend:3002/internal/content/revalidate}
       CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
       CONTENT_CDN_PURGE_ENDPOINT: ${CONTENT_CDN_PURGE_ENDPOINT:-}
