@@ -350,7 +350,7 @@ compose_config="$(mktemp /tmp/lens-rhyme-compose-config.XXXXXX.yml)"
 config_digest="$(sha256sum "$compose_config" | awk '{print $1}')"
 rm -f "$compose_config"
 
-required_services=(backend seo-research seo-generation-worker seo-publication-worker codex-runner-manager frontend admin-frontend docs-site content-frontend postgres)
+required_services=(backend seo-research seo-agent-reach seo-generation-worker seo-publication-worker codex-runner-manager frontend admin-frontend docs-site content-frontend postgres)
 stack_is_running() {
   local running service
   running="$("${compose[@]}" ps --status running --services 2>/dev/null || true)"
@@ -393,7 +393,7 @@ if [[ "$NOOP_DEPLOY" != true ]]; then
   done
 
   echo "Building the pinned internal SEO research service..."
-  "${compose[@]}" build seo-research
+  "${compose[@]}" build seo-research seo-agent-reach
   echo "Starting LensRhyme Compose stack..."
   deployment_set_phase compose_up
   "${compose[@]}" up -d --pull missing --quiet-pull
