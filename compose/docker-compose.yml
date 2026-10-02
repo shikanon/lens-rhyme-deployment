@@ -65,6 +65,7 @@ services:
       RESOURCEFS_CDN_SIGNING_SECRET: ${RESOURCEFS_CDN_SIGNING_SECRET:-}
       CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
       SEO_RESEARCH_SEARCH_URL: ${SEO_RESEARCH_SEARCH_URL-http://seo-research:3210}
+      SEO_RESEARCH_AGENT_REACH_URL: ${SEO_RESEARCH_AGENT_REACH_URL-http://seo-agent-reach:3211}
       SEO_RESEARCH_ENGINES: ${SEO_RESEARCH_ENGINES:-bing,duckduckgo}
       CONTENT_FRONTEND_REVALIDATION_URLS: ${CONTENT_FRONTEND_REVALIDATION_URLS:-http://content-frontend:3002/internal/content/revalidate}
       CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
@@ -107,6 +108,26 @@ services:
       start_period: 15s
     restart: always
 
+  seo-agent-reach:
+    image: lens-rhyme-seo-agent-reach:a19a171-fixed1
+    build:
+      context: ../research/agent-reach
+    pull_policy: never
+    read_only: true
+    tmpfs: [/tmp:size=32m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3211/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+
   seo-generation-worker:
     image: ${BACKEND_IMAGE:-shikanon096/lens-rhyme-backend:latest}
     volumes:
@@ -133,9 +154,12 @@ services:
       RESOURCEFS_CDN_SIGNING_SECRET: ${RESOURCEFS_CDN_SIGNING_SECRET:-}
       CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
       SEO_RESEARCH_SEARCH_URL: ${SEO_RESEARCH_SEARCH_URL-http://seo-research:3210}
+      SEO_RESEARCH_AGENT_REACH_URL: ${SEO_RESEARCH_AGENT_REACH_URL-http://seo-agent-reach:3211}
       SEO_RESEARCH_ENGINES: ${SEO_RESEARCH_ENGINES:-bing,duckduckgo}
     depends_on:
       seo-research:
+        condition: service_healthy
+      seo-agent-reach:
         condition: service_healthy
       backend-init:
         condition: service_completed_successfully
@@ -157,6 +181,7 @@ services:
       BACKEND_OUTPUTS_PATH: /app/outputs
       CONTENT_SITE_URL: ${CONTENT_SITE_URL:-https://lensrhyme.com}
       SEO_RESEARCH_SEARCH_URL: ${SEO_RESEARCH_SEARCH_URL-http://seo-research:3210}
+      SEO_RESEARCH_AGENT_REACH_URL: ${SEO_RESEARCH_AGENT_REACH_URL-http://seo-agent-reach:3211}
       SEO_RESEARCH_ENGINES: ${SEO_RESEARCH_ENGINES:-bing,duckduckgo}
       CONTENT_FRONTEND_REVALIDATION_URLS: ${CONTENT_FRONTEND_REVALIDATION_URLS:-http://content-frontend:3002/internal/content/revalidate}
       CONTENT_REVALIDATION_SECRET: ${CONTENT_REVALIDATION_SECRET:-}
