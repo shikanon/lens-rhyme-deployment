@@ -11,6 +11,7 @@ def main():
         from aliyunsdkcore.client import AcsClient
         from aliyunsdkcore.request import CommonRequest
         request = CommonRequest()
+        request.set_protocol_type('https')
         request.set_domain('cdn.aliyuncs.com')
         request.set_version('2018-05-10')
         request.set_method('POST')
@@ -22,7 +23,7 @@ def main():
         return {'request_id': result.get('RequestId')}
     target = data['target']
     key = '.well-known/acme-challenge/' + data['token']
-    if target['provider'] == 'volcengine':
+    if target.get('origin_provider', target['provider']) == 'volcengine':
         import tos
         client = tos.TosClientV2(credentials['ak'], credentials['sk'], target['endpoint'], target['region'])
         if data['operation'] == 'put':

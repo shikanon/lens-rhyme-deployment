@@ -12,12 +12,13 @@
     },
     {
       "domain": "cdn.lens-rhyme.tensorbytes.com",
-      "provider": "volcengine",
-      "credentials_file": "/etc/lens-cdn-renewal/volcengine-cdn.json",
+      "provider": "aliyun",
+      "credentials_file": "/etc/lens-cdn-renewal/aliyun-cdn.json",
       "origin_credentials_file": "/etc/lens-cdn-renewal/volcengine-origin.json",
       "bucket": "lensrhyme",
       "endpoint": "tos-cn-hongkong.volces.com",
-      "region": "cn-hongkong"
+      "region": "cn-hongkong",
+      "origin_provider": "volcengine"
     }
   ]
 }
