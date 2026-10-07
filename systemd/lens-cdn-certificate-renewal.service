@@ -1,0 +1,13 @@
+[Unit]
+Description=Renew and deploy LensRhyme CDN TLS certificates
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lens-cdn-certificate-renewal run
+TimeoutStartSec=35min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only

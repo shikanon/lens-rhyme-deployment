@@ -1,0 +1,23 @@
+{
+  "backend_container": "compose-backend-1",
+  "domains": [
+    {
+      "domain": "cdn.ai.tensorbytes.com",
+      "provider": "aliyun",
+      "credentials_file": "/etc/lens-cdn-renewal/aliyun-cdn.json",
+      "origin_credentials_file": "/etc/lens-cdn-renewal/aliyun-origin.json",
+      "bucket": "tensorbytes-vedio",
+      "endpoint": "https://oss-ap-southeast-1.aliyuncs.com",
+      "region": "ap-southeast-1"
+    },
+    {
+      "domain": "cdn.lens-rhyme.tensorbytes.com",
+      "provider": "volcengine",
+      "credentials_file": "/etc/lens-cdn-renewal/volcengine-cdn.json",
+      "origin_credentials_file": "/etc/lens-cdn-renewal/volcengine-origin.json",
+      "bucket": "lensrhyme",
+      "endpoint": "tos-cn-hongkong.volces.com",
+      "region": "cn-hongkong"
+    }
+  ]
+}

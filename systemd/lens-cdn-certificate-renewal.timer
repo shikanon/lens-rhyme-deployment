@@ -1,0 +1,11 @@
+[Unit]
+Description=Check LensRhyme CDN certificates every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=lens-cdn-certificate-renewal.service
+
+[Install]
+WantedBy=timers.target
