@@ -142,13 +142,13 @@ def sync(config, target, previous):
     except (OSError,ssl.SSLError):
         edge = None
     if edge and edge['fingerprint'] == info['fingerprint']:
-        return {'status':'healthy','local':info,'edge':edge}
+        return {'status':'healthy','local':info,'edge':edge,'deployed_fingerprint':info['fingerprint']}
     pem = (lineage(target)/'fullchain.pem').read_text()
     private_key = (lineage(target)/'privkey.pem').read_text()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.load_cert_chain(str(lineage(target)/'fullchain.pem'),str(lineage(target)/'privkey.pem'))
     # Retry propagation without repeatedly uploading identical certificates.
-    deployed = previous.get('deployed_fingerprint')
+    deployed = previous.get('deployed_fingerprint') or previous.get('edge',{}).get('fingerprint')
     if deployed != info['fingerprint']:
         if target['provider'] == 'aliyun':
             sdk(config,target,'aliyun-api',action='SetCdnDomainSSLCertificate', params={'DomainName':target['domain'],'SSLProtocol':'on','CertType':'upload','CertName':'lens-acme-'+hashlib.sha256(pem.encode()).hexdigest()[:16],'SSLPub':pem,'SSLPri':private_key})

@@ -41,7 +41,7 @@ sudo journalctl -u lens-cdn-certificate-renewal.service -n 50
 sudo /usr/local/sbin/lens-cdn-certificate-renewal check
 ```
 
-`issue --domain DOMAIN` signs/renews without CDN deployment. `run --domain DOMAIN` signs/renews and deploys. Certbot saves the hooks for subsequent unattended renewal. Failed deployments are retried by the timer without reissuing a still-valid local certificate. Successful uploads pending propagation are not repeatedly uploaded.
+`issue --domain DOMAIN` signs/renews without CDN deployment. `run --domain DOMAIN` signs/renews and deploys. Certbot saves the hooks for subsequent unattended renewal. Failed deployments are retried by the timer without reissuing a still-valid local certificate. Successful uploads pending propagation are not repeatedly uploaded. Healthy results retain the deployed fingerprint; a temporary DNS cache mismatch must not trigger another upload with the same certificate name. Older status files can recover this fingerprint from a previously verified edge certificate.
 
 For the existing host Nginx configuration, `scripts/repair-host-certbot.py` moves a server-level HTTP redirect into `location /` so the HTTP-01 location can execute, switches the old `lens-rhyme.tensorbytes.com` certificate from standalone (which conflicts with Nginx port 80) to webroot, and installs an Nginx deploy reload hook. Configuration is backed up and checked with `nginx -t` before reload. It does not stop Nginx.
 
