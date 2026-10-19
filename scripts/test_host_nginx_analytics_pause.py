@@ -125,6 +125,23 @@ class HostNginxAnalyticsPauseTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse(self.args.snippet_target.exists())
 
+    def test_site_change_during_nginx_dump_keeps_callers_cas_and_stops(self):
+        original_dump = self.module.config_dump
+        concurrent = self.before + "# edit arrived after reviewed CAS\n"
+
+        def change_after_dump(site):
+            result = original_dump(site)
+            self.realpath.write_text(concurrent)
+            return result
+
+        with mock.patch.object(self.module, "config_dump", side_effect=change_after_dump):
+            with self.assertRaisesRegex(self.module.PauseFailure, "checksum changed during nginx -T"):
+                self.apply()
+        self.assertEqual(self.realpath.read_text(), concurrent)
+        self.assertFalse(self.args.snippet_target.exists())
+        self.assertFalse(self.args.backup_dir.exists())
+        self.assertEqual(self.calls, [["nginx", "-T"]])
+
     def test_symlink_target_mismatch_stops(self):
         other = self.root / "other.conf"
         other.write_text(self.before)
@@ -162,6 +179,24 @@ class HostNginxAnalyticsPauseTests(unittest.TestCase):
             self.apply()
         self.assertEqual(self.args.snippet_target.read_text(), "existing unrelated file")
         self.assertEqual(self.calls, [])
+
+    def test_snippet_appearing_at_atomic_publish_is_never_replaced(self):
+        original_link = self.module.os.link
+        concurrent = "concurrent operator owned snippet\n"
+
+        def create_before_link(source, destination, *args, **kwargs):
+            self.assertEqual(Path(destination), self.args.snippet_target)
+            Path(destination).write_text(concurrent)
+            return original_link(source, destination, *args, **kwargs)
+
+        with mock.patch.object(self.module.os, "link", side_effect=create_before_link):
+            with self.assertRaisesRegex(self.module.PauseFailure, "Snippet appeared concurrently"):
+                self.apply()
+        self.assertEqual(self.args.snippet_target.read_text(), concurrent)
+        self.assertEqual(self.realpath.read_text(), self.before)
+        self.assertTrue(self.site.is_symlink())
+        self.assertEqual(list(self.args.snippet_target.parent.glob(".analytics-pause-*")), [])
+        self.assertEqual(self.calls, [["nginx", "-T"]])
 
     def test_apply_preserves_symlink_permissions_and_private_backup(self):
         before_stat = self.realpath.stat()

@@ -80,8 +80,11 @@ The script creates a private operation directory below
 `/var/backups/lensrhyme-analytics-pause/`, with the full original site, original
 ownership/permissions, hashes and a 0600 receipt. It preserves the enabled-site
 symlink and uses an atomic replacement of its resolved file. It refuses to
-overwrite any pre-existing snippet. It rechecks the original CAS immediately
-before replacement and validates with `nginx -t` before a graceful
+overwrite any pre-existing snippet, including one arriving at publication:
+the complete temporary file is published with an atomic no-replace hard link.
+The caller's site hash remains the CAS throughout the operation, including
+after `nginx -T`. It rechecks that CAS immediately before replacement and
+validates with `nginx -t` before a graceful
 `systemctl reload nginx`. A validation failure restores the original bytes,
 removes only the unchanged operation-owned snippet, and tests the original
 configuration without reloading. Concurrent file changes stop restoration

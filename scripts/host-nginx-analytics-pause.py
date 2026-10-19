@@ -211,20 +211,43 @@ def atomic_write(path: Path, data: bytes, metadata: Path | None = None) -> None:
             os.unlink(temporary)
 
 
+def atomic_install_absent(path: Path, data: bytes) -> None:
+    """Publish complete snippet bytes without ever replacing an existing path."""
+    fd, temporary = tempfile.mkstemp(prefix=".analytics-pause-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o644)
+        try:
+            # Same-directory link creation is atomic and fails if a file or
+            # symlink arrived after the earlier existence check.
+            os.link(temporary, path)
+        except FileExistsError as exc:
+            raise PauseFailure("Snippet appeared concurrently; refusing to overwrite it") from exc
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def write_receipt(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n")
     path.chmod(0o600)
 
 
 def pause(args: argparse.Namespace) -> dict:
-    realpath = compare_site(args.site, args.expected_realpath, args.expected_sha256)
+    expected_hash = args.expected_sha256
+    realpath = compare_site(args.site, args.expected_realpath, expected_hash)
     if os.path.lexists(args.snippet_target):
         raise PauseFailure("Snippet target exists; refusing to overwrite it")
     dump = config_dump(args.site)
     before = realpath.read_bytes()
+    if sha256(before) != expected_hash:
+        raise PauseFailure("Site checksum changed during nginx -T")
     source = SOURCE_SNIPPET.read_bytes()
     candidate = candidate_site(before.decode(), args.snippet_target).encode()
-    summary = {"status": "plan", "site": str(args.site), "realpath": str(realpath), "before_sha256": sha256(before), "after_sha256": sha256(candidate), "snippet": str(args.snippet_target), "snippet_sha256": sha256(source), "vhosts": [sorted(x) for x in VHOSTS], "nginx_dump_sha256": sha256(dump.encode()), "fresh_page_verification_required": True, "existing_tabs_revoked": False}
+    summary = {"status": "plan", "site": str(args.site), "realpath": str(realpath), "before_sha256": expected_hash, "after_sha256": sha256(candidate), "snippet": str(args.snippet_target), "snippet_sha256": sha256(source), "vhosts": [sorted(x) for x in VHOSTS], "nginx_dump_sha256": sha256(dump.encode()), "fresh_page_verification_required": True, "existing_tabs_revoked": False}
     if not args.apply:
         return summary
     if not args.snippet_target.parent.is_dir():
@@ -246,7 +269,7 @@ def pause(args: argparse.Namespace) -> dict:
     compare_site(args.site, args.expected_realpath, summary["before_sha256"])
     if os.path.lexists(args.snippet_target):
         raise PauseFailure("Snippet appeared concurrently")
-    atomic_write(args.snippet_target, source)
+    atomic_install_absent(args.snippet_target, source)
     try:
         # Recheck the symlink and original bytes immediately before replacement.
         compare_site(args.site, args.expected_realpath, summary["before_sha256"])
