@@ -1,0 +1,5 @@
+# Review-only example. The driver creates its private override from an approved
+# locally present immutable digest; this file is never an extra stack entrypoint.
+services:
+  backend:
+    image: docker.io/shikanon096/lens-rhyme-backend@sha256:REPLACE_WITH_VERIFIED_BACKEND_DIGEST
