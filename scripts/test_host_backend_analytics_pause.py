@@ -215,6 +215,7 @@ upstream FRONTEND_UPSTREAM {
                 self.runtime = {
                     service: {"id": "original-" + service, "image": owner.before_config["services"][service]["image"], "source": "e" * 40,
                               "started_at": "2026-10-19T00:00:00Z", "status": "running",
+                              "config_hash": hashlib.sha256(json.dumps(owner.before_config["services"][service], sort_keys=True).encode()).hexdigest(),
                               "config_files": str(paths.root / "compose/docker-compose.yml") + "," + str(paths.root / "compose/docker-compose.override.yml")}
                     for service in module.SERVICES
                 }
@@ -243,6 +244,7 @@ upstream FRONTEND_UPSTREAM {
                 backend.update(id="installed-" + str(len(self.switches)), image=image,
                                source=self.metadata[image]["source"], started_at="2026-10-20T01:00:00Z",
                                status="running",
+                               config_hash=self.compose_hash(override.read_text()),
                                config_files=backend["config_files"].split("," + str(override))[0] + "," + str(override))
                 return ""
 
@@ -261,6 +263,10 @@ upstream FRONTEND_UPSTREAM {
                 if override_text is not None:
                     value["services"]["backend"]["image"] = override_text.split("    image: ", 1)[1].strip()
                 return value
+
+            def compose_hash(self, override_text=None):
+                backend = self.compose_config(override_text)["services"]["backend"]
+                return hashlib.sha256(json.dumps(backend, sort_keys=True).encode()).hexdigest()
 
             def backend_ip(self):
                 return "172.18.0.27" if self.runtime["backend"]["image"] == owner.image else "172.18.0.8"
@@ -695,6 +701,80 @@ upstream FRONTEND_UPSTREAM {
             rollback_flow.assert_called_once_with(mock.ANY, json.loads(receipt_bytes), directory)
             self.assertIsInstance(rollback_flow.call_args.args[0], self.module.Host)
             apply_flow.assert_not_called()
+
+    def test_native_compose_hash_uses_exact_backend_command_and_rejects_ambiguous_output(self):
+        host = self.module.Host(self.module.Paths(root=self.root))
+        expected = "a" * 64
+        override = self.module.override_text(self.image)
+        with mock.patch.object(host, "command", return_value="backend " + expected + "\n") as command:
+            self.assertEqual(host.compose_hash(), expected)
+            self.assertEqual(host.compose_hash(override), expected)
+        self.assertEqual(command.call_args_list, [
+            mock.call(host.prefix() + ["config", "--hash", "backend"], None),
+            mock.call(host.prefix() + ["-f", "-", "config", "--hash", "backend"], override),
+        ])
+        for output in (expected, "frontend " + expected, "backend " + "A" * 64, "backend " + expected + "\nbackend " + "b" * 64, ""):
+            with self.subTest(output=output), mock.patch.object(host, "command", return_value=output):
+                with self.assertRaises(self.module.PauseFailure):
+                    host.compose_hash()
+
+    def test_plan_rejects_current_environment_model_drift_from_running_native_hash(self):
+        host = self.host_fixture()
+        running_hash = host.runtime["backend"]["config_hash"]
+        self.before_config["services"]["backend"]["environment"]["DEFAULT_TEXT_MODEL"] = "new-model-on-disk"
+        host.paths.root.joinpath(".env").write_text("DEFAULT_TEXT_MODEL=new-model-on-disk\n")
+        self.assertNotEqual(host.compose_hash(), running_hash)
+        with self.assertRaisesRegex(self.module.PauseFailure, "Base Compose differs from running backend config hash"):
+            self.module.make_plan(host, self.image, self.revision)
+        self.assertEqual(host.runtime["backend"]["config_hash"], running_hash)
+        self.assertEqual(host.switches, [])
+        self.assertFalse((self.root / "release").exists())
+
+    def test_candidate_wrong_native_hash_cannot_succeed_and_owned_backend_rolls_back(self):
+        host = self.host_fixture()
+        plan = self.module.make_plan(host, self.image, self.revision)
+        self.assertEqual(plan["compose_native_base_hash"], host.runtime["backend"]["config_hash"])
+        self.assertEqual(plan["compose_native_candidate_hash"], host.compose_hash(self.module.override_text(self.image)))
+        original_switch = host.switch
+
+        def wrong_candidate_hash(override):
+            original_switch(override)
+            if host.runtime["backend"]["image"] == self.image:
+                host.runtime["backend"]["config_hash"] = "f" * 64
+
+        directory = self.root / "release"
+        with mock.patch.object(host, "switch", side_effect=wrong_candidate_hash):
+            with self.assertRaisesRegex(self.module.PauseFailure, "failed_rolled_back"):
+                self.module.apply(host, plan, directory)
+        self.assertEqual(json.loads((directory / "receipt.json").read_text())["status"], "failed_rolled_back")
+        self.assertEqual(host.runtime["backend"]["image"], self.old_image)
+        self.assertEqual(host.runtime["backend"]["config_hash"], plan["compose_native_base_hash"])
+        self.assertEqual(len(host.switches), 2)
+        for service in self.module.SERVICES[1:]:
+            self.assertEqual(host.runtime[service], plan["before"]["containers"][service])
+
+    def test_rollback_wrong_base_native_hash_cannot_record_success(self):
+        host = self.host_fixture()
+        plan = self.module.make_plan(host, self.image, self.revision)
+        directory = self.root / "release"
+        receipt = self.module.apply(host, plan, directory)
+        stored_receipt = (directory / "receipt.json").read_bytes()
+        original_switch = host.switch
+
+        def wrong_rollback_hash(override):
+            original_switch(override)
+            if host.runtime["backend"]["image"] == self.old_image:
+                host.runtime["backend"]["config_hash"] = "f" * 64
+
+        with mock.patch.object(host, "switch", side_effect=wrong_rollback_hash):
+            with self.assertRaisesRegex(self.module.PauseFailure, "Rollback container native config hash mismatch"):
+                self.module.rollback(host, receipt, directory)
+        self.assertEqual((directory / "receipt.json").read_bytes(), stored_receipt)
+        self.assertEqual(host.runtime["backend"]["image"], self.old_image)
+        self.assertNotEqual(host.runtime["backend"]["config_hash"], plan["compose_native_base_hash"])
+        self.assertEqual(len(host.switches), 2)
+        for service in self.module.SERVICES[1:]:
+            self.assertEqual(host.runtime[service], plan["before"]["containers"][service])
 
 
 if __name__ == "__main__":

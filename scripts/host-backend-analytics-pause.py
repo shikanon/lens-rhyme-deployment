@@ -150,6 +150,15 @@ class Host:
         # Returned environment values stay in process memory, never the receipt.
         return json.loads(self.command(args + ['config', '--format', 'json'], override_text))
 
+    def compose_hash(self, override_text=None):
+        args = self.prefix()
+        if override_text is not None:
+            args += ['-f', '-']
+        output = self.command(args + ['config', '--hash', 'backend'], override_text)
+        match = re.fullmatch(r'\s*backend\s+([0-9a-f]{64})\s*', output)
+        require(match is not None, 'Compose native backend hash unavailable')
+        return match.group(1)
+
     def image_info(self, image):
         require(IMAGE_RE.fullmatch(image), 'Invalid backend image')
         fmt = ('{"id":{{json .Id}},"digests":{{json .RepoDigests}},'
@@ -170,6 +179,7 @@ class Host:
         fmt = ('{"id":{{json .Id}},"image":{{json .Config.Image}},'
                '"source":{{json (index .Config.Labels "org.opencontainers.image.revision")}},'
                '"started_at":{{json .State.StartedAt}},"status":{{json .State.Status}},'
+               '"config_hash":{{json (index .Config.Labels "com.docker.compose.config-hash")}},'
                '"config_files":{{json (index .Config.Labels "com.docker.compose.project.config_files")}}}')
         return {service: json.loads(self.command(['docker', 'inspect', '--format', fmt,
                                                   'compose-' + service + '-1'])) for service in SERVICES}
@@ -288,12 +298,16 @@ def make_plan(host, image, revision):
     require(old_metadata['source'] == old['source'], 'Rollback image source mismatch')
     initial = host.compose_config()
     require(initial['services']['backend']['image'] == old['image'], 'Base Compose backend differs from runtime')
+    base_hash = host.compose_hash()
+    require(old.get('config_hash') == base_hash, 'Base Compose differs from running backend config hash')
     candidate = host.compose_config(override_text(image))
     only_backend_image_changed(initial, candidate, image)
+    candidate_hash = host.compose_hash(override_text(image))
     # Bind the caller-visible state after potentially slow Compose inspection too.
     require(host.state() == before, 'Runtime changed during planning')
     return {'schema_version': 1, 'image': image, 'revision': revision, 'before': before,
             'candidate_metadata': metadata, 'rollback_metadata': old_metadata,
+            'compose_native_base_hash': base_hash, 'compose_native_candidate_hash': candidate_hash,
             'compose_before_sha256': digest(json.dumps(initial, sort_keys=True).encode()),
             'compose_candidate_sha256': digest(json.dumps(candidate, sort_keys=True).encode())}
 
@@ -332,6 +346,8 @@ def restore_backend(host, plan, directory, expected):
             'Rollback image metadata drift')
     installed_override = override_text(plan['image']).encode()
     require(override.read_bytes() == installed_override, 'Override ownership drift')
+    require(host.compose_hash(override_text(before['containers']['backend']['image'])) ==
+            plan['compose_native_base_hash'], 'Rollback Compose native hash drift')
     atomic_replace(override, override_text(before['containers']['backend']['image']).encode(),
                    digest(installed_override))
     host.switch(override)
@@ -339,12 +355,16 @@ def restore_backend(host, plan, directory, expected):
     ensure_others(before, switched, host.paths.upstreams)
     require(switched['containers']['backend']['image'] == before['containers']['backend']['image'],
             'Rollback backend image mismatch')
+    require(switched['containers']['backend'].get('config_hash') == plan['compose_native_base_hash'],
+            'Rollback container native config hash mismatch')
     owned_upstream = host.refresh_upstream(current['files'][str(host.paths.upstreams)], host.backend_ip())
     checks = host.http_checks(False)
     final = host.state()
     ensure_others(before, final, host.paths.upstreams)
     require(final['files'][str(host.paths.upstreams)] == owned_upstream,
             'Concurrent upstream modification after rollback')
+    require(final['containers']['backend'].get('config_hash') == plan['compose_native_base_hash'],
+            'Rollback config hash changed during verification')
     return {'state': final, 'direct_backend': checks}
 
 
@@ -372,6 +392,8 @@ def apply(host, plan, release_dir):
         current = host.state()
         ensure_others(plan['before'], current, host.paths.upstreams)
         require(current['containers']['backend']['image'] == plan['image'], 'Installed backend image mismatch')
+        require(current['containers']['backend'].get('config_hash') == plan['compose_native_candidate_hash'],
+                'Installed backend native config hash mismatch')
         require(current['files'][str(host.paths.upstreams)] == owned_upstream,
                 'Concurrent upstream modification before refresh')
         owned_upstream = host.refresh_upstream(owned_upstream, host.backend_ip())
@@ -380,6 +402,8 @@ def apply(host, plan, release_dir):
         ensure_others(plan['before'], after, host.paths.upstreams)
         require(after['files'][str(host.paths.upstreams)] == owned_upstream,
                 'Concurrent upstream modification after refresh')
+        require(after['containers']['backend'].get('config_hash') == plan['compose_native_candidate_hash'],
+                'Candidate config hash changed during verification')
         receipt.update(status='applied', after=after, direct_backend=checks)
     except Exception as exc:
         receipt['error_type'] = type(exc).__name__  # Never persist raw stderr/env/DSN.

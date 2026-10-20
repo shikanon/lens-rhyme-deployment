@@ -96,6 +96,17 @@ runtime again. Schema metadata uses a read-only connection inside the unchanged
 publication worker, with no app initialization imports, so a crashed candidate
 API does not prevent rollback.
 
+The October 20 02:32Z read confirmed Compose 2.40.3 native
+`config --hash backend` matches the running backend
+`com.docker.compose.config-hash` (both `5648c03f6d6da4ddf509ef7128958b79ed169f08e3eb13a3cf7fd4170c5645dc`).
+The driver requires this match before planning, records the candidate native
+hash, and verifies actual container labels after apply and rollback. A changed
+`.env` that was never applied cannot silently enter this rollout. No raw runtime
+environment or command is persisted. The [Compose 2.40.3 ServiceHash implementation](https://github.com/docker/compose/blob/v2.40.3/pkg/compose/hash.go)
+excludes build/pull/dependency/replica fields; this native hash complements the
+complete in-memory model comparison and scoped `--no-deps` command. It is not
+a claim that every dependency or replica property was read from the container.
+
 Review the command and plan before applying. On the host, using a private
 release directory containing the committed script and reviewed tooling:
 
